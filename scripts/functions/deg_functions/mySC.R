@@ -4094,7 +4094,7 @@ library(scran)
   data.list =list(source=dsSource,target=dsTarget)
   res=.mycBindFn(data.list,names(data.list))
   data.list =list(source=.extraExport2SeuratFn(dsSource),target=.extraExport2SeuratFn(dsTarget))
-  
+
   
   res$batch_label=res$anno_batch
   res$batch_label2=res$anno_batch
@@ -4113,7 +4113,7 @@ library(scran)
   
   res=.extraExport2SeuratFn(res)
   
-  
+
   for (i in 1:length(data.list)) {
     data.list[[i]] <- NormalizeData(data.list[[i]], verbose = FALSE)
     data.list[[i]] <- FindVariableFeatures(data.list[[i]], selection.method = "vst", nfeatures = 2000, verbose = FALSE)
@@ -4246,11 +4246,9 @@ library(scran)
   if(!is.null(doubletGroups)){
     dataset_source=.extraDoubletMakerFn(inputData=dataset_source,label_col=source_label_col,sel_labels=doubletGroups)
   }
-    
+  
   dataset_source$madeCluster=colData(dataset_source)[,source_label_col]
   dataset_target$madeCluster=colData(dataset_target)[,target_label_col]
-  
-  print('done')
 
   #dsSource=dataset_source;dsTarget=dataset_target;cellType_source=colData(dataset_source)[,source_label_col];cellType_target=colData(dataset_target)[,target_label_col];covariates=covariates;calculate_depth_per_gene=calculate_depth_per_gene;source_batch_label=source_batch_label_col;target_batch_label=target_batch_label_col;indScaling=indScaling
   res_seurat=.extraHarmony_dataset_integratorFn(dsSource=dataset_source,dsTarget=dataset_target,cellType_source=colData(dataset_source)[,source_label_col],indScaling = indScaling,cellType_target=colData(dataset_target)[,target_label_col],covariates=covariates,calculate_depth_per_gene=calculate_depth_per_gene,source_batch_label=source_batch_label_col,target_batch_label=target_batch_label_col,inputVarGenes=inputVarGenes,ds_specific_hvg=ds_specific_hvg)
@@ -4265,12 +4263,11 @@ library(scran)
   }
   
 
-
   label_col="madeCluster"
   training_idx=which(res_seurat$batch_label=="source")
-  
+
   harmony_embeddings <- harmony::HarmonyMatrix(res_seurat@reductions$pca@cell.embeddings[,1:nPCs], meta_data, 'batch_label2', do_pca = FALSE, verbose=FALSE)
-  
+
   res=.myKnnLabelTransferFn(inputPCAembeddings=harmony_embeddings,meta_data=meta_data,training_idx=training_idx,label_col=label_col,n.adaptiveKernel=n.adaptiveKernel,nPropIter=nPropIter)
   
   resTest=res$test_labels
