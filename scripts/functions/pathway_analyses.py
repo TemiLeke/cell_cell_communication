@@ -229,7 +229,8 @@ def read_pathways(filename):
 def filter_expressed_genes_by_celltype(adata: AnnData, 
                                       threshold: float=0.05,
                                       filter_genes_from: str='singlecell', 
-                                      subject_id: str='Subject'):
+                                      subject_id: str='Subject', 
+                                      groups_col = 'cell_type'):
     """
 
         Function to filter expressed genes by cell type based on a threshold
@@ -262,7 +263,7 @@ def filter_expressed_genes_by_celltype(adata: AnnData,
         # Get pseudo-bulk profile
         adata = dc.get_pseudobulk(adata,
                                 sample_col=subject_id,
-                                groups_col='cell_type',
+                                groups_col=groups_col,
                                 layer='counts',
                                 mode='sum',
                                 min_cells=0,
@@ -270,22 +271,22 @@ def filter_expressed_genes_by_celltype(adata: AnnData,
                                 )
         # Loop through each unique cell type in the input AnnData object
 
-        for cell_type in adata.obs.cell_type.unique():
+        for cell_type in adata.obs[groups_col].unique():
 
-            expressed_genes_per_celltype[cell_type] = dc.filter_by_prop(adata[adata.obs['cell_type']==cell_type],
+            expressed_genes_per_celltype[cell_type] = dc.filter_by_prop(adata[adata.obs[groups_col]==cell_type],
                                                                       min_prop=threshold)
     
     elif filter_genes_from=='singlecell':
         # Loop through each unique cell type in the input AnnData object
 
-        for cell_type in adata.obs.cell_type.unique():
+        for cell_type in adata.obs[groups_col].unique():
 
             # Calculate the number of cells based on the specified threshold
             percent = threshold
-            num_cells = round(percent*len(adata[adata.obs['cell_type']==cell_type]))
+            num_cells = round(percent*len(adata[adata.obs[groups_col]==cell_type]))
 
             # Filter genes based on minimum number of cells and store the resulting gene names
-            expressed_genes_per_celltype[cell_type], _ = sc.pp.filter_genes(adata[adata.obs.cell_type==cell_type].layers['counts'],
+            expressed_genes_per_celltype[cell_type], _ = sc.pp.filter_genes(adata[adata.obs[groups_col]==cell_type].layers['counts'],
                                                                             min_cells=num_cells, inplace=False)
             expressed_genes_per_celltype[cell_type] = list(adata.var_names[expressed_genes_per_celltype[cell_type]])
 
@@ -352,7 +353,7 @@ def filter_lowly_exp_genes(expressed: pd.DataFrame,
 
 
 def get_ind_level_ave(adata: AnnData, subject_id: str = 'Subject', method: str = "agg_x_num",
-                     expressed_genes_per_celltype: dict = {}, filter_genes_at_threshold: bool = True):
+                     expressed_genes_per_celltype: dict = {}, filter_genes_at_threshold: bool = True, groups_col='cell_type'):
     """
     Get averaged expression data for each cell type and individual in an AnnData object.
     
@@ -375,18 +376,18 @@ def get_ind_level_ave(adata: AnnData, subject_id: str = 'Subject', method: str =
 
         avs_logcounts_cellxind = {}
         # loop over each unique cell type in the annotation metadata
-        for cell_type in adata.obs.cell_type.unique():
+        for cell_type in adata.obs[groups_col].unique():
 
             # filter genes based on threshold
             if filter_genes_at_threshold:
-                adata_temp = adata[adata.obs.cell_type==cell_type].copy()
+                adata_temp = adata[adata.obs[groups_col]==cell_type].copy()
                 # sc.pp.filter_genes(adata_temp, min_cells=gene_celltype_threshold*adata_temp.n_obs)
                 adata_temp = adata_temp[:, adata_temp.var_names.isin(expressed_genes_per_celltype[cell_type].tolist())]
             else:
                 adata_temp = adata.copy()
 
             # Get pseudo-bulk profile
-            pdata = dc.get_pseudobulk(adata_temp, sample_col=subject_id, groups_col='cell_type', layer='counts', mode='sum',
+            pdata = dc.get_pseudobulk(adata_temp, sample_col=subject_id, groups_col=groups_col, layer='counts', mode='sum',
                                     min_cells=0, min_counts=0)
             
             # genes = dc.filter_by_prop(pdata, min_prop=0.05, min_smpls=1)
@@ -451,7 +452,7 @@ def get_ind_level_ave(adata: AnnData, subject_id: str = 'Subject', method: str =
 
         # Create a data frame of labels by combining cell type and individual metadata fields.
         # Sum counts by individual
-        labels = pd.DataFrame(meta['cell_type'].astype(str) + '_' + meta[subject_id].astype(str), columns=['individual'])
+        labels = pd.DataFrame(meta[groups_col].astype(str) + '_' + meta[subject_id].astype(str), columns=['individual'])
 
         # Sum counts by individual and store the results in a dictionary.
         summed_logcounts_cellxind = sum_counts(adata, labels, adata.obs_names, adata.var_names)
@@ -484,9 +485,9 @@ def get_ind_level_ave(adata: AnnData, subject_id: str = 'Subject', method: str =
             avs_by_ind_out[i] = df
             
             if filter_genes_at_threshold:
-                # num_cells = round(gene_celltype_threshold*len(adata[adata.obs['cell_type']==cell_type]))
+                # num_cells = round(gene_celltype_threshold*len(adata[adata.obs[groups_col]==cell_type]))
                 # # Filter genes based on minimum number of cells and store the resulting gene names
-                # gene_mask, _ = sc.pp.filter_genes(adata[adata.obs.cell_type==cell_type].layers['counts'],
+                # gene_mask, _ = sc.pp.filter_genes(adata[adata.obs[groups_col]==cell_type].layers['counts'],
                 #                                                                 min_cells=num_cells, 
                 #                                                                 inplace=False)
                 # genes = list(adata.var_names[gene_mask])

@@ -5828,6 +5828,55 @@ varSizes <- function(){
 }
 
 
+.sconline.FilterGenesByExpr <- function(inputExpData, TMMnorm = TRUE, quantile.norm = FALSE, prior.count = 0.5) {
+  # Function to filter genes by expression levels
+  # 
+  # Parameters:
+  #   inputExpData: Expression data matrix with genes as rows and samples as columns.
+  #   TMMnorm: Logical, indicating whether to perform TMM normalization. Default is TRUE.
+  #   quantile.norm: Logical, indicating whether to apply quantile normalization. Default is FALSE.
+  #   prior.count: Numeric, specifying the prior count for logCPM calculation. Default is 0.5.
+  #
+  # Returns:
+  #   logCPM: An EList object containing log-transformed expression values after filtering.
+  # 
+
+  require(edgeR)
+  
+  # Ensure inclusion of genes with meaningful expression dynamics/variability across samples
+  inputExpData <- inputExpData[rowSums(counts(inputExpData)) > 5, ]
+  inputExpData <- inputExpData[apply(counts(inputExpData), 1, sd) > 0.0001, ]
+  
+  # Apply Counts-per-million (CPM) threshold filtering
+  tmpCount <- rowSums(edgeR::cpm(as.matrix(counts(inputExpData))))
+  keep <- tmpCount > max(0.01 * ncol(inputExpData), min(15, ncol(inputExpData) / 3))
+  
+  # Filter genes based on their expression across samples
+  tmpCount2 <- apply(counts(inputExpData), 1, function(x) sum(x > 0))
+  keep <- keep & tmpCount2 > max(0.01 * ncol(inputExpData), min(10, ncol(inputExpData) / 3))
+  
+  # Display the number of expressed genes
+  print(paste("Number of expressed genes:", sum(keep)))
+  
+  # Extract expression data for selected genes
+  tmpexp <- counts(inputExpData)[keep, ]
+  dge <- DGEList(tmpexp)
+  
+  if (TMMnorm) {
+    dge <- calcNormFactors(dge)
+  }
+  
+  # Create logCPM object for log-transformed expression values
+  logCPM <- new("EList")
+  logCPM$E <- edgeR::cpm(dge, normalized.lib.sizes = TMMnorm, log = TRUE, prior.count = prior.count)
+  
+  if (quantile.norm) {
+    logCPM$E <- limma::normalizeQuantiles(logCPM$E)
+  }
+  return(logCPM)
+}
+
+
 .extra_sconline.Fit_LimmaTrendFn=function(sl_data,model,random_effect=NULL,TMMnorm=F,VSTnorm=F,prior.count=1,quantile.norm=F,bkg_genes=NULL,no_normalization=F,dc.object=NULL,include.malat1.as.covariate=F){
   require(edgeR)
   require(limma)

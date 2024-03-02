@@ -18,11 +18,12 @@ get_fits = function(gsva_out, meta, covariates, technical_covariate){
     # Usage:
     # fits <- get_fits(gsva_out, meta, covariates)
 
-
     fits = list()
     for(i in names(gsva_out)){
+        gsva_out[[i]] <- t(gsva_out[[i]])
         # Get metadata for the samples corresponding to the gene set scores
         predict = meta[as.character(rownames(gsva_out[[i]])),]
+        groups_in_meta = unique(predict$pathology.group)
         # Create a design matrix for the linear model with covariates
 
         # Define the formula based on the selected covariates
@@ -40,24 +41,34 @@ get_fits = function(gsva_out, meta, covariates, technical_covariate){
         # print(ncol(mod))
         # print(qr(mod)$rank)
         #mod = model.matrix(~0 + pathology.group + SampleBatch, data=predict)
-        contrasts <- makeContrasts(pathology.groupearly - pathology.groupno,
-                                    pathology.grouplate - pathology.groupearly,
-                                    pathology.grouplate - pathology.groupno,
-                                    (pathology.groupearly + pathology.grouplate)/2 - pathology.groupno,
-                                    levels=colnames(mod))
+
+        if ('early' %in% groups_in_meta && 'late' %in% groups_in_meta && 'no' %in% groups_in_meta) {
+        contrasts <- makeContrasts(
+            pathology.groupearly - pathology.groupno,
+            pathology.grouplate - pathology.groupearly,
+            pathology.grouplate - pathology.groupno,
+            (pathology.groupearly + pathology.grouplate)/2 - pathology.groupno,
+            levels=colnames(mod)
+        )
+        } else if ('early' %in% groups_in_meta && 'no' %in% groups_in_meta && !('late' %in% groups_in_meta)) {
+        contrasts <- makeContrasts(pathology.groupearly - pathology.groupno, levels=colnames(mod))
+        } else if ('late' %in% groups_in_meta && 'early' %in% groups_in_meta && !('no' %in% groups_in_meta)) {
+        contrasts <- makeContrasts(pathology.grouplate - pathology.groupearly, levels=colnames(mod))
+        } else if ('late' %in% groups_in_meta && 'no' %in% groups_in_meta && !('early' %in% groups_in_meta)) {
+        contrasts <- makeContrasts(pathology.grouplate - pathology.groupno, levels=colnames(mod))
+        }
 
         # contrasts <- makeContrasts(pathology.groupad - pathology.groupno, levels=colnames(mod))
 
-
         # Fit the linear model using the gene set scores as the outcome
-        fits[[i]] = fit.gsva(mod, i, gsva_out, 'pathology.group', contrasts, meta, technical_covariate)
+        fits[[i]] = fit.gsva(mod, i, gsva_out, 'pathology.group', contrasts, meta, technical_covariate, groups_in_meta)
     }
     return(fits)
 }
 
 ####################################################################################################################
 # Define function to fit linear models and get gene set scores for a single gene set
-fit.gsva = function(mod1, i, gsva.per.celltype, coef, contrasts, meta, technical_covariate){
+fit.gsva = function(mod1, i, gsva.per.celltype, coef, contrasts, meta, technical_covariate, groups_in_meta){
 
 
     # This function fits linear models and obtains gene set scores for a single gene set.
@@ -95,16 +106,21 @@ fit.gsva = function(mod1, i, gsva.per.celltype, coef, contrasts, meta, technical
 
     # Use empirical Bayes to estimate variances and perform moderated t-tests
     fit <- eBayes(fit)
-    
+
     # Extract all genesets, ranked by their P-values
-    allgenesets[['early_vs_no']] <- topTable(fit, coef="pathology.groupearly - pathology.groupno", number=Inf, 
-                                                confint = T) %>% .[order(.$P.Value, decreasing = F),]
-    allgenesets[['late_vs_early']] <- topTable(fit, coef="pathology.grouplate - pathology.groupearly", number=Inf,
-                                                confint = T) %>% .[order(.$P.Value, decreasing = F),] 
-    allgenesets[['late_vs_no']] <- topTable(fit, coef="pathology.grouplate - pathology.groupno", number=Inf,
-                                            confint = T) %>% .[order(.$P.Value, decreasing = F),]   
-    allgenesets[['ad_vs_no']] <- topTable(fit, coef="(pathology.groupearly + pathology.grouplate)/2 - pathology.groupno", number=Inf,
-                                            confint = T) %>% .[order(.$P.Value, decreasing = F),] 
+    if ('early' %in% groups_in_meta && 'late' %in% groups_in_meta && 'no' %in% groups_in_meta) {
+        allgenesets[['early_vs_no']] <- topTable(fit, coef="pathology.groupearly - pathology.groupno", number=Inf, confint = TRUE) %>% arrange(P.Value)
+        allgenesets[['late_vs_early']] <- topTable(fit, coef="pathology.grouplate - pathology.groupearly", number=Inf, confint = TRUE) %>% arrange(P.Value) 
+        allgenesets[['late_vs_no']] <- topTable(fit, coef="pathology.grouplate - pathology.groupno", number=Inf, confint = TRUE) %>% arrange(P.Value)
+        allgenesets[['ad_vs_no']] <- topTable(fit, coef="(pathology.groupearly + pathology.grouplate)/2 - pathology.groupno", number=Inf, confint = TRUE) %>% arrange(P.Value)
+    } else if ('early' %in% groups_in_meta && 'no' %in% groups_in_meta && !('late' %in% groups_in_meta)) {
+        allgenesets[['early_vs_no']] <- topTable(fit, coef="pathology.groupearly - pathology.groupno", number=Inf, confint = TRUE) %>% arrange(P.Value)
+    } else if ('late' %in% groups_in_meta && 'early' %in% groups_in_meta && !('no' %in% groups_in_meta)) {
+        allgenesets[['late_vs_early']] <- topTable(fit, coef="pathology.grouplate - pathology.groupearly", number=Inf, confint = TRUE) %>% arrange(P.Value)
+    } else if ('late' %in% groups_in_meta && 'no' %in% groups_in_meta && !('early' %in% groups_in_meta)) {
+        allgenesets[['late_vs_no']] <- topTable(fit, coef="pathology.grouplate - pathology.groupno", number=Inf, confint = TRUE) %>% arrange(P.Value)
+    }
+                                      
 
     # allgenesets[['ad_vs_no']] <- topTable(fit, coef="pathology.groupad - pathology.groupno", number=Inf,
     #                                     confint = T) %>% .[order(.$P.Value, decreasing = F),] 
