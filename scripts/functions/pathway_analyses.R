@@ -1,7 +1,7 @@
 
 ####################################################################################################################
 # Define function to get linear model fits for each gene set
-get_fits = function(gsva_out, meta, covariates, technical_covariate){
+get_fits = function(gsva_out, meta, covariates, random_effect){
 
 
     # Function to get linear model fits for each gene set
@@ -19,58 +19,62 @@ get_fits = function(gsva_out, meta, covariates, technical_covariate){
     # fits <- get_fits(gsva_out, meta, covariates)
 
     fits = list()
+    
     for(i in names(gsva_out)){
-        gsva_out[[i]] <- t(gsva_out[[i]])
+
         # Get metadata for the samples corresponding to the gene set scores
-        predict = meta[as.character(rownames(gsva_out[[i]])),]
+        predict = meta[[i]]
         groups_in_meta = unique(predict$pathology.group)
-        # Create a design matrix for the linear model with covariates
 
-        # Define the formula based on the selected covariates
+        if (length(unique(predict$pathology.group))>=2){
 
-        covariate_list <- strsplit(covariates, " ")
-        if (covariate_list[1] == "None") {
-            formula <- as.formula("~0 + pathology.group")
+            # Define the formula based on the selected covariates
+            formula="~ 0"
+            for(icov in covariates){
+                if(length(unique(predict[, icov]))>1){
+                    if(class(predict[, icov]) == class(factor)){
+                        predict[, icov] = as.character(predict[, icov])
+                    }
+                    formula = paste0(formula, " + ", icov)
+                } else {
+                    warning(paste0("Excluding ", icov," covariate as it has only one level!"))
+                }
             }
-        else {
-            formula <- as.formula(paste0("~0 + ", paste(c("pathology.group", covariate_list), collapse = " + ")))
-        } 
-        # Generate the design matrix based on the formula and data
-        mod <- model.matrix(formula, data = predict)
+            # Generate the design matrix based on the formula and data
+            mod <- model.matrix(as.formula(formula), data = predict)
 
-        # print(ncol(mod))
-        # print(qr(mod)$rank)
-        #mod = model.matrix(~0 + pathology.group + SampleBatch, data=predict)
+            if ('early' %in% groups_in_meta && 'late' %in% groups_in_meta && 'no' %in% groups_in_meta) {
+            contrasts <- makeContrasts(
+                pathology.groupearly - pathology.groupno,
+                pathology.grouplate - pathology.groupearly,
+                pathology.grouplate - pathology.groupno,
+                (pathology.groupearly + pathology.grouplate)/2 - pathology.groupno,
+                levels=colnames(mod)
+            )
+            } else if ('early' %in% groups_in_meta && 'no' %in% groups_in_meta && !('late' %in% groups_in_meta)) {
+            contrasts <- makeContrasts(pathology.groupearly - pathology.groupno, levels=colnames(mod))
+            } else if ('late' %in% groups_in_meta && 'early' %in% groups_in_meta && !('no' %in% groups_in_meta)) {
+            contrasts <- makeContrasts(pathology.grouplate - pathology.groupearly, levels=colnames(mod))
+            } else if ('late' %in% groups_in_meta && 'no' %in% groups_in_meta && !('early' %in% groups_in_meta)) {
+            contrasts <- makeContrasts(pathology.grouplate - pathology.groupno, levels=colnames(mod))
+            }
 
-        if ('early' %in% groups_in_meta && 'late' %in% groups_in_meta && 'no' %in% groups_in_meta) {
-        contrasts <- makeContrasts(
-            pathology.groupearly - pathology.groupno,
-            pathology.grouplate - pathology.groupearly,
-            pathology.grouplate - pathology.groupno,
-            (pathology.groupearly + pathology.grouplate)/2 - pathology.groupno,
-            levels=colnames(mod)
-        )
-        } else if ('early' %in% groups_in_meta && 'no' %in% groups_in_meta && !('late' %in% groups_in_meta)) {
-        contrasts <- makeContrasts(pathology.groupearly - pathology.groupno, levels=colnames(mod))
-        } else if ('late' %in% groups_in_meta && 'early' %in% groups_in_meta && !('no' %in% groups_in_meta)) {
-        contrasts <- makeContrasts(pathology.grouplate - pathology.groupearly, levels=colnames(mod))
-        } else if ('late' %in% groups_in_meta && 'no' %in% groups_in_meta && !('early' %in% groups_in_meta)) {
-        contrasts <- makeContrasts(pathology.grouplate - pathology.groupno, levels=colnames(mod))
-        }
+            # Fit the linear model using the gene set scores as the outcome
+            fits[[i]] = fit.gsva(mod, i, gsva_out, 'pathology.group', contrasts, meta, random_effect, groups_in_meta)
 
-        # contrasts <- makeContrasts(pathology.groupad - pathology.groupno, levels=colnames(mod))
-
-        # Fit the linear model using the gene set scores as the outcome
-        fits[[i]] = fit.gsva(mod, i, gsva_out, 'pathology.group', contrasts, meta, technical_covariate, groups_in_meta)
+      } else {
+            print('WARNING****************')
+            print(paste0("Excluding cell type ",i," as it has only one covariate level!"))
+      }
+      
     }
     return(fits)
 }
-
+   
 ####################################################################################################################
 # Define function to fit linear models and get gene set scores for a single gene set
-fit.gsva = function(mod1, i, gsva.per.celltype, coef, contrasts, meta, technical_covariate, groups_in_meta){
 
-
+fit.gsva = function(mod1, i, gsva.per.celltype, coef, contrasts, meta, random_effect, groups_in_meta) {
     # This function fits linear models and obtains gene set scores for a single gene set.
 
     # Args:
@@ -84,54 +88,83 @@ fit.gsva = function(mod1, i, gsva.per.celltype, coef, contrasts, meta, technical
     # Returns:
     # A list containing a table of gene set results for each contrast and each cell type.
 
-    # Raises:
-    # NA
-
-
-
     # Fit the linear model with the gene set scores as the outcome
-    allgenesets = list()
-    
-    if (eval(duplicate_correction)) {
+    expression <- gsva.per.celltype[[i]]
+    meta <- meta[[i]]
 
-        expression <- t(gsva.per.celltype[[i]])
-        cor <- duplicateCorrelation(expression, mod1, block=meta[[paste0(technical_covariate)]])
-        fit <- lmFit(t(gsva.per.celltype[[i]]), design=mod1, block=meta[[paste0(technical_covariate)]], 
-                    correlation=cor$consensus.correlation)
-
+    if (random_effect != 'None') {
+      cor <- duplicateCorrelation(expression, mod1, block = as.character(meta[, random_effect]))
+      fit <- if (!is.nan(cor$consensus.correlation) && abs(cor$consensus.correlation) < 0.01) 
+                  lmFit(expression, design = mod1, block = as.character(meta[, random_effect]), correlation = cor$consensus.correlation)
+              else
+                  lmFit(expression, design = mod1)
     } else {
-        fit <- lmFit(t(gsva.per.celltype[[i]]), design=mod1)
+        fit <- lmFit(expression, design = mod1)
     }
-            fit <- contrasts.fit(fit, contrasts)
-
-    # Use empirical Bayes to estimate variances and perform moderated t-tests
+    
+    fit <- contrasts.fit(fit, contrasts)
     fit <- eBayes(fit)
 
     # Extract all genesets, ranked by their P-values
+    allgenesets <- list()
+    
     if ('early' %in% groups_in_meta && 'late' %in% groups_in_meta && 'no' %in% groups_in_meta) {
-        allgenesets[['early_vs_no']] <- topTable(fit, coef="pathology.groupearly - pathology.groupno", number=Inf, confint = TRUE) %>% arrange(P.Value)
-        allgenesets[['late_vs_early']] <- topTable(fit, coef="pathology.grouplate - pathology.groupearly", number=Inf, confint = TRUE) %>% arrange(P.Value) 
-        allgenesets[['late_vs_no']] <- topTable(fit, coef="pathology.grouplate - pathology.groupno", number=Inf, confint = TRUE) %>% arrange(P.Value)
-        allgenesets[['ad_vs_no']] <- topTable(fit, coef="(pathology.groupearly + pathology.grouplate)/2 - pathology.groupno", number=Inf, confint = TRUE) %>% arrange(P.Value)
+
+        allgenesets[['early_vs_no']] <- topTable(fit, 
+                                                adjust.method = "BH",
+                                                coef = "pathology.groupearly - pathology.groupno", 
+                                                number = Inf,
+                                                confint = TRUE) %>% arrange(P.Value)
+
+        allgenesets[['late_vs_early']] <- topTable(fit, 
+                                                    adjust.method = "BH", 
+                                                    coef = "pathology.grouplate - pathology.groupearly", 
+                                                    number = Inf, 
+                                                    confint = TRUE) %>% arrange(P.Value)
+
+        allgenesets[['late_vs_no']] <- topTable(fit, 
+                                                adjust.method = "BH", 
+                                                coef = "pathology.grouplate - pathology.groupno", 
+                                                number = Inf, 
+                                                confint = TRUE) %>% arrange(P.Value)
+
+        allgenesets[['ad_vs_no']] <- topTable(fit, 
+                                              adjust.method = "BH", 
+                                              coef = "(pathology.groupearly + pathology.grouplate)/2 - pathology.groupno", 
+                                              number = Inf, 
+                                              confint = TRUE) %>% arrange(P.Value)
+
     } else if ('early' %in% groups_in_meta && 'no' %in% groups_in_meta && !('late' %in% groups_in_meta)) {
-        allgenesets[['early_vs_no']] <- topTable(fit, coef="pathology.groupearly - pathology.groupno", number=Inf, confint = TRUE) %>% arrange(P.Value)
+
+        allgenesets[['early_vs_no']] <- topTable(fit, 
+                                                adjust.method = "BH", 
+                                                coef = "pathology.groupearly - pathology.groupno", 
+                                                number = Inf, 
+                                                confint = TRUE) %>% arrange(P.Value)
+
     } else if ('late' %in% groups_in_meta && 'early' %in% groups_in_meta && !('no' %in% groups_in_meta)) {
-        allgenesets[['late_vs_early']] <- topTable(fit, coef="pathology.grouplate - pathology.groupearly", number=Inf, confint = TRUE) %>% arrange(P.Value)
+
+        allgenesets[['late_vs_early']] <- topTable(fit, 
+                                                    adjust.method = "BH", 
+                                                    coef = "pathology.grouplate - pathology.groupearly", 
+                                                    number = Inf, 
+                                                    confint = TRUE) %>% arrange(P.Value)
+
     } else if ('late' %in% groups_in_meta && 'no' %in% groups_in_meta && !('early' %in% groups_in_meta)) {
-        allgenesets[['late_vs_no']] <- topTable(fit, coef="pathology.grouplate - pathology.groupno", number=Inf, confint = TRUE) %>% arrange(P.Value)
+
+        allgenesets[['late_vs_no']] <- topTable(fit,
+                                                adjust.method = "BH", 
+                                                coef = "pathology.grouplate - pathology.groupno", 
+                                                number = Inf, 
+                                                confint = TRUE) %>% arrange(P.Value)
     }
-                                      
-
-    # allgenesets[['ad_vs_no']] <- topTable(fit, coef="pathology.groupad - pathology.groupno", number=Inf,
-    #                                     confint = T) %>% .[order(.$P.Value, decreasing = F),] 
-
-    # allgenesets_2 <- topTable(fit, coef=2, number=Inf, confint = T) %>% .[order(.$P.Value, decreasing = F),]
+    
     # Add the celltype and gene set names to the output table
-    for(j in names(allgenesets)){
+    for (j in names(allgenesets)) {
         allgenesets[[j]]$celltype = i
-        allgenesets[[j]]$names = rownames(allgenesets[[j]])       
+        allgenesets[[j]]$names = rownames(allgenesets[[j]])
     }
-
+    
     return(allgenesets)
 }
 
@@ -168,7 +201,7 @@ get_scores = function(fits){
             df$celltype = i
             # Sort the table by absolute log fold-change, in descending order
             df = df[order(abs(df$logFC),decreasing = T),]
-            all[[i]][[j]] = df[,c('celltype', 'logFC','P.Value', 'names')]
+            all[[i]][[j]] = df[,c('celltype', 'logFC', 'adj.P.Val', 'P.Value', 'names')]
         }
     }
     # Return a list containing the table of gene set scores for all gene sets

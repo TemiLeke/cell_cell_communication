@@ -5734,7 +5734,7 @@ varSizes <- function(){
     dc <- .extra_sconline.duplicateCorrelation(logCPM,design=model, block=sl_data[,blocking_var])
     if(!is.nan(dc$consensus.correlation)){
       if(abs(dc$consensus.correlation)<0.9){
-        fit <- lmFit(logCPM, model,block = sl_data[,blocking_var], correlation=dc$consensus.correlation)
+        fit <- lmFit(logCPM, model, block = sl_data[,blocking_var], correlation=dc$consensus.correlation)
         blocked_analysis=T
       } else {
         fit <- lmFit(logCPM, model)
@@ -5850,11 +5850,11 @@ varSizes <- function(){
   # Apply Counts-per-million (CPM) threshold filtering
   tmpCount <- rowSums(edgeR::cpm(as.matrix(counts(inputExpData))))
   keep <- tmpCount > max(0.01 * ncol(inputExpData), min(15, ncol(inputExpData) / 3))
-  
+
   # Filter genes based on their expression across samples
   tmpCount2 <- apply(counts(inputExpData), 1, function(x) sum(x > 0))
   keep <- keep & tmpCount2 > max(0.01 * ncol(inputExpData), min(10, ncol(inputExpData) / 3))
-  
+
   # Display the number of expressed genes
   print(paste("Number of expressed genes:", sum(keep)))
   
@@ -10973,7 +10973,7 @@ varSizes <- function(){
   } else {
     inputExpList=.mySplitObject_v2(inputExpData,colName="lib_anno",min_dataset_size=min_size_limit,ncores=ncores)
     #inputExpList2=.mySplitObject_v2(inputExpData,colName="library_anno2",min_dataset_size=min_size_limit,ncores=ncores)
-    if(sum(unlist(lapply(inputExpList,class))=="SingleCellExperiment")!=length(inputExpList)){
+    if(sum(unlist(lapply(inputExpList,class))=="SingleCellExperiment")!=length(inputExpList) || length(inputExpList) == 0){
       cat("Error: consider increasing RAM! re-trying with lower number of cores")
       inputExpList=.mySplitObject_v2(inputExpData,colName="lib_anno",min_dataset_size=min_size_limit,ncores=1)
       if(sum(unlist(lapply(inputExpList,class))=="SingleCellExperiment")!=length(inputExpList)){
@@ -11005,6 +11005,8 @@ varSizes <- function(){
         stop("Persistent error: increase RAM!")
       }
     }
+
+    
     sl_data_size=lapply(sl_data,function(x) max(x$pseudocell_size))
     sl_data=sl_data[sl_data_size>=min_size_limit]
     sl_data=lapply(sl_data,function(x) x[,which(x$pseudocell_size>=min_size_limit),drop=F])
@@ -11012,6 +11014,7 @@ varSizes <- function(){
     sl_data=.mycBindFn(sl_data)
     sl_data$QC_Gene_total_count=apply(counts(sl_data),2,sum)
     sl_data$QC_Gene_unique_count=apply(counts(sl_data),2,function(x) sum(x>0))
+    
   }
   
   

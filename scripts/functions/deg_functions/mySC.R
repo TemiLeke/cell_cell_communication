@@ -8408,20 +8408,27 @@ sort.cell = NULL, combine = TRUE,title_prefix=NULL)
 }
 
 .mySplitObject_v2=function(object,colName,min_dataset_size,ncores=5){
+
   if(class(object)=="Seurat"){
+    
     res=Seurat::SplitObject(object,split.by = colName)
+
   } else{
     pd=colData(object)[,colName]
-    res=as.data.frame(summary(counts(object)))
+
+    res=as.data.frame(summary(counts(object)))    
     res$anno=pd[res[,2]]
+
     res=split(res,pd[res[,2]])
-    res_pd=split(as.data.frame(colData(object)),pd)
+    res_pd=split(as.data.frame(colData(object)), pd)
+
     res=parallel::mclapply(1:length(res),function(x){
       
       y=Matrix::sparseMatrix(i = res[[x]][,1],
                              j = as.numeric(as.factor(as.character(res[[x]][,2]))),
-                             x = res[[x]][,3],dims = c(nrow(object),nrow(res_pd[[x]])))
-      
+                             x = res[[x]][,3],
+                             dims = c(nrow(object), nrow(res_pd[[x]])))
+
       #res_pd[[x]]$pseudocell_size=nrow(res_pd[[x]])
       if(ncol(y)==1){#.5*min_dataset_size){
         #y=as(matrix(rowSums(y),ncol=1),"dgCMatrix")
@@ -8437,7 +8444,8 @@ sort.cell = NULL, combine = TRUE,title_prefix=NULL)
       return(y)
       
     },mc.cores=ncores)
-    
+
+
     if(F){
       for(i in unique(pd)){
         res=c(res,list(object[,which(pd==i)]))
@@ -8449,7 +8457,7 @@ sort.cell = NULL, combine = TRUE,title_prefix=NULL)
   
   size_dist=unlist(lapply(res,ncol))
   res=res[which(size_dist>=min_dataset_size)]
-  
+
   return(res)
 }
 
