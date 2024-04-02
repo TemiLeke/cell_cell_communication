@@ -31,6 +31,7 @@ get_fits = function(gsva_out, meta, covariates, random_effect){
             # Define the formula based on the selected covariates
             formula="~ 0"
             for(icov in covariates){
+                #icov <- gsub(" ", ".", icov)
                 if(length(unique(predict[, icov]))>1){
                     if(class(predict[, icov]) == class(factor)){
                         predict[, icov] = as.character(predict[, icov])
@@ -91,10 +92,10 @@ fit.gsva = function(mod1, i, gsva.per.celltype, coef, contrasts, meta, random_ef
     # Fit the linear model with the gene set scores as the outcome
     expression <- gsva.per.celltype[[i]]
     meta <- meta[[i]]
-
+    
     if (random_effect != 'None') {
       cor <- duplicateCorrelation(expression, mod1, block = as.character(meta[, random_effect]))
-      fit <- if (!is.nan(cor$consensus.correlation) && abs(cor$consensus.correlation) < 0.01) 
+      fit <- if (!is.nan(cor$consensus.correlation) && abs(cor$consensus.correlation) > 0.01) 
                   lmFit(expression, design = mod1, block = as.character(meta[, random_effect]), correlation = cor$consensus.correlation)
               else
                   lmFit(expression, design = mod1)
@@ -168,10 +169,121 @@ fit.gsva = function(mod1, i, gsva.per.celltype, coef, contrasts, meta, random_ef
     return(allgenesets)
 }
 
+
+
+####################################################################################################################
+# Define function to get linear model fits for each gene set
+get_fits_cps = function(gsva_out, meta, covariates, random_effect){
+
+
+    # Function to get linear model fits for each gene set
+
+    # Parameters:
+    
+    # gsva_out: A list of gene set variation analysis (GSVA) scores for each gene set
+    # meta: A data frame containing metadata for the samples corresponding to the gene set scores
+    # covariates: A string specifying the covariates to include in the linear model
+
+    # Returns:
+    # A list of linear model fits for each gene set
+
+    # Usage:
+    # fits <- get_fits(gsva_out, meta, covariates)
+
+    fits = list()
+
+    for(i in names(gsva_out)){
+
+        # Get metadata for the samples corresponding to the gene set scores
+        predict = meta[[i]]
+
+        # Define the formula based on the selected covariates
+        formula="~ 0"
+        for(icov in covariates){
+            #icov <- gsub(" ", ".", icov)
+            if(length(unique(predict[, icov]))>1){
+                if(class(predict[, icov]) == class(factor)){
+                    predict[, icov] = as.character(predict[, icov])
+                }
+                formula = paste0(formula, " + ", icov)
+            } else {
+                warning(paste0("Excluding ", icov," covariate as it has only one level!"))
+            }
+        }
+        # Generate the design matrix based on the formula and data
+        mod <- model.matrix(as.formula(formula), data = predict)
+
+        contrasts <- makeContrasts(CPSlate - CPSearly, levels=colnames(mod))
+
+        # Fit the linear model using the gene set scores as the outcome
+        fits[[i]] = fit.gsva.cps(mod, i, gsva_out, meta, contrasts, random_effect)
+      
+    }
+    return(fits)
+}
+   
+####################################################################################################################
+# Define function to fit linear models and get gene set scores for a single gene set
+
+fit.gsva.cps = function(mod1, i, gsva.per.celltype, meta, contrasts, random_effect) {
+    # This function fits linear models and obtains gene set scores for a single gene set.
+
+    # Args:
+    # mod1: A model matrix specifying the linear model design, created using the metadata for the samples corresponding to the gene set scores.
+
+    # i: A character string indicating the name of the gene set being analyzed.
+    # gsva.per.celltype: A list containing gene set scores for all cell types.
+
+    # Returns:
+    # A list containing a table of gene set results for each contrast and each cell type.
+
+    # Fit the linear model with the gene set scores as the outcome
+    expression <- gsva.per.celltype[[i]]
+    meta <- meta[[i]]
+    
+    if (random_effect != 'None') {
+      cor <- duplicateCorrelation(expression, mod1, block = as.character(meta[, random_effect]))
+      # print(cor)
+      fit <- if (!is.nan(cor$consensus.correlation) && abs(cor$consensus.correlation) > 0.01) 
+                  lmFit(expression, design = mod1, block = as.character(meta[, random_effect]), correlation = cor$consensus.correlation)
+              else
+                  lmFit(expression, design = mod1)
+    } else {
+        fit <- lmFit(expression, design = mod1)
+    }
+
+    coef_summary <- data.frame(StdErr = sqrt(fit$stdev.unscaled))
+
+    fit_ebayes <- eBayes(fit)
+
+    allgenesets <- list()
+    allgenesets[['CPS']] <- topTable(fit_ebayes, adjust.method = "BH", number = Inf, confint = TRUE) %>% arrange(P.Value)
+
+    # Add the celltype and gene set names to the output table
+    for (j in names(allgenesets)) {
+
+        allgenesets[[j]]$celltype = i
+        allgenesets[[j]]$names = rownames(allgenesets[[j]])
+        allgenesets[[j]] <- merge(allgenesets[[j]], 
+                                  coef_summary,
+                                  by = "row.names", 
+                                  all = FALSE,
+                                  all.x = TRUE) %>% arrange(P.Value)
+    }
+
+    fit_contrasts <- contrasts.fit(fit, contrasts)
+    fit_contrasts <- eBayes(fit_contrasts)
+    allgenesets[['late_vs_early']] <- topTable(fit_contrasts, adjust.method = "BH", coef = "CPSlate - CPSearly",  number = Inf, confint = TRUE) %>% arrange(P.Value)
+    allgenesets[['late_vs_early']]$celltype = i
+    allgenesets[['late_vs_early']]$names = rownames(allgenesets[['late_vs_early']])
+
+    return(allgenesets)
+}
+
+
 ####################################################################################################################
 # Define function to get a data frame of gene set scores for all gene sets
 get_scores = function(fits){
-
 
     # This function takes a list of fitted linear models for each gene set and returns a data frame of gene set scores for all gene sets.
 
