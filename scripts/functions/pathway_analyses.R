@@ -210,14 +210,18 @@ get_fits_cps = function(gsva_out, meta, covariates, random_effect){
                 warning(paste0("Excluding ", icov," covariate as it has only one level!"))
             }
         }
-        # Generate the design matrix based on the formula and data
-        mod <- model.matrix(as.formula(formula), data = predict)
 
-        contrasts <- makeContrasts(CPSlate - CPSearly, levels=colnames(mod))
+        if (!grepl("CPS", formula)){
+            warning(paste0("Skipping fit for ", i, " as it it only has one level of CPS"))
+            next
+        }else{
+            # Generate the design matrix based on the formula and data
+            mod <- model.matrix(as.formula(formula), data = predict)
 
-        # Fit the linear model using the gene set scores as the outcome
-        fits[[i]] = fit.gsva.cps(mod, i, gsva_out, meta, contrasts, random_effect)
-      
+            contrasts <- makeContrasts(CPSlate - CPSearly, levels=colnames(mod))
+            # Fit the linear model using the gene set scores as the outcome
+            fits[[i]] = fit.gsva.cps(mod, i, gsva_out, meta, contrasts, random_effect)
+        }
     }
     return(fits)
 }

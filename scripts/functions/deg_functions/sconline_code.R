@@ -5828,7 +5828,7 @@ varSizes <- function(){
 }
 
 
-.sconline.FilterGenesByExpr <- function(inputExpData, raw_sce, threshold, TMMnorm = TRUE, quantile.norm = FALSE, prior.count = 0.5) {
+.sconline.FilterGenesByExpr <- function(inputExpData, raw_sce, threshold=0.10, filter_from='raw', TMMnorm = TRUE, quantile.norm = FALSE, prior.count = 0.5){
   # Function to filter genes by expression levels
   # 
   # Parameters:
@@ -5843,14 +5843,19 @@ varSizes <- function(){
 
   require(edgeR)
   
-  expr <- counts(raw_sce)
+  if (filter_from=='raw'){
+    expr <- counts(raw_sce)
+  }else{
+    expr <- counts(inputExpData)
+  }
+
   expr_cells <- apply(expr, 1, function(x) sum(x > 0))
   expr_pct <- expr_cells / ncol(expr)
   
   inputExpData <- inputExpData[rownames(expr)[expr_pct >= threshold], ]
   rm(expr, expr_cells, expr_pct)
 
-  # Ensure inclusion of genes with meaningful expression dynamics/variability across samples
+  # Ensure further inclusion of genes with meaningful expression dynamics/variability across samples
   inputExpData <- inputExpData[rowSums(counts(inputExpData)) > 5, ]
   inputExpData <- inputExpData[apply(counts(inputExpData), 1, sd) > 0.0001, ]
   
