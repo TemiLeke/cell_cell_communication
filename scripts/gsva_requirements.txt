@@ -15,7 +15,7 @@ async-timeout==4.0.2
 attrs==23.1.0
 backcall==0.2.0
 backoff==2.2.1
-backports.functools-lru-cache @ file:///home/conda/feedstock_root/build_artifacts/backports.functools_lru_cache_1618230623929/work
+backports.functools-lru-cache
 beautifulsoup4==4.12.2
 blessed==1.20.0
 blosc2==2.0.0
@@ -70,7 +70,7 @@ hyperopt==0.1.2
 idna==3.4
 igraph==0.10.4
 imageio==2.31.1
-importlib-metadata @ file:///home/conda/feedstock_root/build_artifacts/importlib-metadata_1682176699712/work
+importlib-metadata
 importlib-resources==5.12.0
 inquirer==3.1.3
 intervaltree==3.1.0
@@ -233,4 +233,4 @@ xarray==2023.5.0
 xlrd==2.0.1
 yarl==1.9.2
 yellowbrick==1.5
-zipp @ file:///home/conda/feedstock_root/build_artifacts/zipp_1677313463193/work
+zipp
