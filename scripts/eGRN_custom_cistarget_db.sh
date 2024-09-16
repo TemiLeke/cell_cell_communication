@@ -1,59 +1,80 @@
 #!/bin/bash
 
-# Uncomment the following line if needed for your cluster
-# module load cluster/wice/bigmem
+set -e
+
+# Suppress warnings
+export PYTHONWARNINGS="ignore:FutureWarning"
 
 # Set variables
-save_dir="/work_bgfs/t/tadeoye/scRNAseq_AD_meta_analysis/data/SEA-AD/MTG/ATACseq/results"  # Replace ${region_name} with actual value or set it before this line
-save_prefix="seaad_mtg"
-working_dir="/work_bgfs/t/tadeoye/scRNAseq_AD_meta_analysis/scripts"
+SAVE_PREFIX="seaad_mtg"
+CELL_TYPE_COLUMN="Subclass"
+REGION_NAME=$(echo "${SAVE_PREFIX}" | awk -F'_' '{print toupper($NF)}')
+SAVE_DIR="/media/tadeoye/Volume1/SEA-AD/${REGION_NAME}/ATACseq/results"
+TMP_DIR="/media/tadeoye/Volume1/SEA-AD/${REGION_NAME}/ATACseq/temp_files"
 
-# Set URLs and file paths
-target_url="https://hgdownload.cse.ucsc.edu/goldenPath/hg38/bigZips"
-REGION_BED="${save_dir}/consensus_peak_calling/consensus_regions.bed"
-GENOME_FASTA="${save_dir}/fasta/hg38.fa"
-CHROMSIZES="${save_dir}/fasta/hg38.chrom.sizes"
-DATABASE_PREFIX="${save_prefix}_1kb_bg_with_mask"
-SCRIPT_DIR="${working_dir}/create_cisTarget_databases"
-SAVE_PREFIX="${save_prefix}"
+# Create directories
+mkdir -p "${SAVE_DIR}"
+mkdir -p "${TMP_DIR}"
 
-# Creating a custom cistarget database
+# Clone create_cisTarget_databases repository
+TARGET_DIR="${PWD}/functions"
+mkdir -p "${TARGET_DIR}"
+cd "${TARGET_DIR}"
 git clone https://github.com/aertslab/create_cisTarget_databases
+cd -
 
-# Download `cluster-buster`
-cd functions/
+# Download cluster-buster
+cd "${TARGET_DIR}"
 wget https://resources.aertslab.org/cistarget/programs/cbust -O cbust
 chmod a+x cbust
-cd ..
+cd -
 
 # Download motif collection
-mkdir -p "${save_dir}/motif_collection"
-wget -O "${save_dir}/motif_collection/v10nr_clust_public.zip" https://resources.aertslab.org/cistarget/motif_collections/v10nr_clust_public/v10nr_clust_public.zip
-cd "${save_dir}/motif_collection"
-yes Y | unzip -q v10nr_clust_public.zip
-cd "${working_dir}"
+mkdir -p "${SAVE_DIR}/motif_collection"
+wget -O "${SAVE_DIR}/motif_collection/v10nr_clust_public.zip" https://resources.aertslab.org/cistarget/motif_collections/v10nr_clust_public/v10nr_clust_public.zip
+cd "${SAVE_DIR}/motif_collection"
+unzip -q v10nr_clust_public.zip
+cd -
 
-# Create directory
-mkdir -p "${save_dir}/fasta"
+# Prepare fasta from consensus regions
+mkdir -p "${SAVE_DIR}/fasta"
+TARGET_URL="https://hgdownload.cse.ucsc.edu/goldenPath/hg38/bigZips"
+REGION_BED="${SAVE_DIR}/consensus_peak_calling/consensus_regions_modified.bed"
+GENOME_FASTA="${SAVE_DIR}/fasta/hg38.fa"
+CHROMSIZES="${SAVE_DIR}/fasta/hg38.chrom.sizes"
+DATABASE_PREFIX="${SAVE_PREFIX}_1kb_bg_with_mask"
+SCRIPT_DIR="${PWD}/functions/create_cisTarget_databases"
 
-# Download and extract genome fasta
-wget "${target_url}/hg38.fa.gz" -O "${GENOME_FASTA}.gz"
-yes Y | gunzip -c "${GENOME_FASTA}.gz" > "${GENOME_FASTA}"
+wget "${TARGET_URL}/hg38.fa.gz" -O "${GENOME_FASTA}.gz"
+gunzip -c "${GENOME_FASTA}.gz" > "${GENOME_FASTA}"
+wget "${TARGET_URL}/hg38.chrom.sizes" -O "${CHROMSIZES}"
 
-# Download chrom sizes
-wget "${target_url}/hg38.chrom.sizes" -O "${CHROMSIZES}"
-
-# Load BEDTools module
-# module load apps/bedtools/2.30.0
-
-export PATH="/work_bgfs/t/tadeoye/scRNAseq_AD_meta_analysis/scripts/bedtools/bin:$PATH"
-chmod a+x /work_bgfs/t/tadeoye/scRNAseq_AD_meta_analysis/scripts/bedtools/bin/bedtools
-
-# Run the create_fasta_with_padded_bg_from_bed.sh script
 "${SCRIPT_DIR}/create_fasta_with_padded_bg_from_bed.sh" \
     "${GENOME_FASTA}" \
     "${CHROMSIZES}" \
     "${REGION_BED}" \
-    "hg38.${SAVE_PREFIX}.with_1kb_bg_padding.fa" \
+    "${SAVE_DIR}/fasta/hg38.${SAVE_PREFIX}.with_1kb_bg_padding.fa" \
     1000 \
     yes
+
+# Create cistarget databases
+ls "${SAVE_DIR}/motif_collection/v10nr_clust_public/singletons" > "${SAVE_DIR}/motif_collection/motifs.txt"
+
+export PATH="${PATH}:${PWD}/functions/cbust"
+
+OUT_DIR="${SAVE_DIR}/motif_collection"
+CBDIR="${PWD}/functions/cbust"
+FASTA_FILE="${SAVE_DIR}/fasta/hg38.${SAVE_PREFIX}.with_1kb_bg_padding.fa"
+MOTIF_LIST="${OUT_DIR}/motifs.txt"
+MOTIF_DIR="${SAVE_DIR}/motif_collection/v10nr_clust_public/singletons"
+
+"${SCRIPT_DIR}/create_cistarget_motif_databases.py" \
+    -f "${FASTA_FILE}" \
+    -c "${CBDIR}" \
+    -M "${MOTIF_DIR}" \
+    -m "${MOTIF_LIST}" \
+    -o "${OUT_DIR}/${DATABASE_PREFIX}" \
+    --bgpadding 1000 \
+    -t 40
+
+echo "Script completed successfully"
