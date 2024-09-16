@@ -9,6 +9,7 @@ results/
 results/fastqc/
 scripts/TOM/
 results/hdWGCNA/SeuratObject
+scripts/.pybiomart.sqlite
 
 # User-specific files
 *.rsuser
