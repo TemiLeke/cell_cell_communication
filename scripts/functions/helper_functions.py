@@ -21,7 +21,7 @@ import re
 from typing import List, Union
 
 
-def clean_covariate_names(covariates: Union[List[str], str],
+def clean_strings(covariates: Union[List[str], str],
                           separator: str = "_",
                           preserve_case: bool = False) -> Union[List[str], str]:
     """

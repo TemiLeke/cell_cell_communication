@@ -5845,7 +5845,7 @@ varSizes <- function(){
   
   if (filter_from=='raw'){
     expr <- counts(raw_sce)
-  }else{
+  }else {
     expr <- counts(inputExpData)
   }
 
