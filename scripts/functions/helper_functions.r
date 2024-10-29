@@ -554,3 +554,54 @@ get_go_hmap = function(matrix, names, path_names_go, path_slot, cell_type_order,
     # Return the generated heatmap
     return(h)
 }
+
+#' Convert Seurat object to SingleCellExperiment with merged metadata
+#' @param seurat_obj Seurat object to convert
+#' @param adata_annot AnnData object with annotations
+#' @param cell_type_column Name of the cell type column
+#' @param subject_id Name of the subject ID column
+#' @return SingleCellExperiment object with merged metadata
+process_metacell_data <- function(seurat_obj, adata_annot, cell_type_column, subject_id) {
+
+  if (!requireNamespace("SingleCellExperiment", quietly = TRUE)) {
+    stop("Package 'SingleCellExperiment' is required. Please install it.")
+  }
+  
+  if (missing(seurat_obj)) stop("seurat_obj is required")
+  if (missing(adata_annot)) stop("adata_annot is required")
+  if (missing(cell_type_column)) stop("cell_type_column is required")
+  if (missing(subject_id)) stop("subject_id is required")
+
+  tryCatch({
+    sce <- as.SingleCellExperiment(GetMetacellObject(seurat_obj))
+    
+    metadata_cols <- setdiff(colnames(colData(adata_annot)), 
+                           cell_type_column)
+    
+    metadata_raw <- colData(adata_annot)[, metadata_cols] %>%
+      as.data.frame() %>%
+      subset(!duplicated(.[, subject_id]), )
+    
+    metacell_coldata <- as.data.frame(colData(sce))
+    
+    merged_rowdata <- merge(
+      x = metacell_coldata,
+      y = metadata_raw,
+      by.x = subject_id,
+      by.y = subject_id,
+      all.x = TRUE
+    )
+    
+    if (nrow(merged_rowdata) != nrow(colData(sce))) {
+      warning("Merge resulted in different number of rows. Check your subject IDs.")
+    }
+    
+    rownames(merged_rowdata) <- rownames(colData(sce))
+    colData(sce) <- DataFrame(merged_rowdata)
+    
+    return(sce)
+    
+  }, error = function(e) {
+    stop(paste("Error processing metacell data:", e$message))
+  })
+}

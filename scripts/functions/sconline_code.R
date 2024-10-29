@@ -29,8 +29,8 @@
 #gcs_source("vgazesta/code/mySC.R")
 #gcs_source("vgazesta/code/my_SC_metaAnalysis.R")
 
-source("../scripts/functions/deg_functions/mySC.R")
-source("../scripts/functions/deg_functions/my_SC_metaAnalysis.R")
+source("../scripts/functions/mySC.R")
+source("../scripts/functions/my_SC_metaAnalysis.R")
 
 
 #library(rliger)

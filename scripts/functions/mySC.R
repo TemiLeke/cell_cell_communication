@@ -1176,9 +1176,9 @@ library(scran)
                                  names.field = 1,
                                  names.delim = "-",
                                  meta.data = .pData(inputData))
-  
+
   if(ncol(.fData(inputData = inputData))>0){
-    nbt@assays$RNA@meta.features=.fData(inputData = inputData)
+    nbt@assays$RNA@meta.data=.fData(inputData = inputData)
   }
   
   # Take all genes in > 3 cells, all cells with > 1k genes, use an expression threshold of 1
