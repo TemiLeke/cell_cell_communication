@@ -1,5 +1,6 @@
 
 import scipy
+import os
 import warnings
 import anndata2ri
 import pandas as pd
@@ -1074,3 +1075,27 @@ def plot_volcano(data, x, y, x_label, y_label='-log10(pvals)', annotate=True,
 
     if return_fig:
         return fig
+    
+
+
+def save_curated_as_gmt(df, name_col, member_col, tempdir):
+    """
+    Save a DataFrame as a GMT file.
+
+    Parameters:
+    - gmt_df (DataFrame): DataFrame containing the gene set information.
+    - name_col (str): Name of the column containing gene names.
+    - tempdir (str): Path to the temporary directory where the GMT file will be saved.
+    """
+
+    gmt_df = df.groupby(name_col)[member_col].unique().reset_index()
+    gmt_df[member_col] = gmt_df[member_col].apply(list)
+    gmt_df['description'] = gmt_df[name_col]
+
+    with open(os.path.join(tempdir, "gs.gmt"), 'w') as of:
+        for _, row in gmt_df.iterrows():
+            name = row[name_col]                
+            # description = row['description']
+            genes = '\t'.join(row[member_col])
+            of.write(f"{name}\t{genes}\n")
+    return gmt_df

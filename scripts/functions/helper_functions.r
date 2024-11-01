@@ -1,5 +1,5 @@
 ##############################################################################################################################
-filter_lowly_exp_genes = function(expressed, all_paths, pathway_gene_threshold=0.33){
+filter_lowly_exp_pathways = function(expressed, all_paths, pathway_gene_threshold=0.33){
     gsets_per_celltype = list()
 
     for(i in names(expressed)){
