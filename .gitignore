@@ -10,6 +10,7 @@ results/fastqc/
 scripts/TOM/
 results/hdWGCNA/SeuratObject
 scripts/.pybiomart.sqlite
+scripts/functions/PASBench/data
 
 # User-specific files
 *.rsuser

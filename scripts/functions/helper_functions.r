@@ -605,3 +605,13 @@ process_metacell_data <- function(seurat_obj, adata_annot, cell_type_column, sub
     stop(paste("Error processing metacell data:", e$message))
   })
 }
+
+
+find_parent_key <- function(cell_type, subclass) {
+  for (key in names(subclass)) {
+    if (cell_type %in% subclass[[key]]) {
+      return(key)
+    }
+  }
+  return(NA)  # Return NA if no match found
+}
