@@ -5,9 +5,6 @@
 #' other parameters see details of tools
 #'
 
-
-
-
 cal_fscLVM = function(counts,
                       # counts matrix; recommend log-transform
                       gSets_path,
@@ -263,11 +260,12 @@ cal_vision = function(counts,
                          # data.frame; sparseMatrix; dgeMatrix; ExpressionSet; SummarizedExperiment; Seurat
                          signatures = gSets_path,
                          projection_method = 'UMAP',
-                         sig_gene_threshold=0)
-
+                         sig_gene_threshold=0,
+                         pool=FALSE)
+    
     options(mc.cores=n_cores)
     vis = VISION::analyze(vis)
-
+    print('done')
     score = t(vis@SigScores)    ## pathway X cell
     return(score)
   },error = function(e){
@@ -283,6 +281,7 @@ cal_pagoda2 = function(counts,
                        n_cores){
 
   library(pagoda2)
+  library(scITD)
   conflicts_prefer(base::intersect)
   ### must be counts matrix !!!!!
 
@@ -310,7 +309,7 @@ cal_pagoda2 = function(counts,
     p2$adjustVariance(plot=F)
 
     cat('Estimating PCA reduction')
-    p2$calculatePcaReduction(nPcs = nPcs, use.odgenes=F,fastpath=F)
+    p2$calculatePcaReduction(nPcs = nPcs, use.odgenes=F, fastpath=F)
 
     path_names = c()
     env = new.env(parent=globalenv())
@@ -348,17 +347,36 @@ cal_pagoda2 = function(counts,
 
 cal_gsva = function(counts,
                     gSets,
+                    gsvaPar,
                     n_cores){
+
+  library(BiocParallel)   
 
   ## matrix could be integer or numeric
 
   tryCatch({
 
-    score = GSVA::gsva(counts,
-                       gSets,
-                       method='gsva',
-                       parallel.sz=n_cores,
-                       verbose=T)
+    params = c(list(exprData = counts, geneSets=gSets), gsvaPar)
+    gsvaPar <- do.call(gsvaParam, params) 
+
+    # score = GSVA::gsva(counts,
+    #                    gSets,
+    #                    method='gsva',
+    #                    parallel.sz=n_cores,
+    #                    verbose=T)
+
+    if(n_cores>1){
+      if (.Platform$OS.type=="windows") {
+        BPPARAM <- BiocParallel::SnowParam(n_cores, type="SOCK",progressbar=TRUE)
+      } else {
+        BPPARAM <- BiocParallel::MulticoreParam(n_cores, progressbar=TRUE)
+      }
+      score <- suppressWarnings(GSVA::gsva(gsvaPar, verbose=TRUE, BPPARAM = BPPARAM))
+    }else{
+      score <- suppressWarnings(GSVA::gsva(gsvaPar, verbose=TRUE, BPPARAM = SerialParam(progressbar=TRUE)))
+    }
+    
+            
 
     return(score)
   },error = function(e){

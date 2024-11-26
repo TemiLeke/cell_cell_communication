@@ -15,11 +15,13 @@ filter_lowly_exp_pathways = function(expressed, all_paths, pathway_gene_threshol
 
 ##############################################################################################################################
 read.geneset = function(path_to_gset){
-  bp = GSA.read.gmt(path_to_gset)
-  out = bp$genesets
-  out = lapply(1:length(out), function(x) out[[x]][out[[x]]!=''])
-  names(out) = bp$geneset.names
-  return(out)
+    invisible(capture.output({
+        bp = GSA.read.gmt(path_to_gset)
+    }))
+    out = bp$genesets
+    out = lapply(1:length(out), function(x) out[[x]][out[[x]]!=''])
+    names(out) = bp$geneset.names
+    return(out)
 }
 
 ####################################################################################################################

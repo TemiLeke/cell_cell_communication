@@ -8,7 +8,6 @@ source('../scripts/functions/PASBench/R/tools.R')
 source('../scripts/functions/PASBench/R/utils.R')
 
 
-
 #' calculation Pathway Activity Score
 #'
 #' parameters `counts`,  `gSets_path` and `gSets` are consistent across all tools
@@ -37,6 +36,7 @@ calculate_PAS = function(counts,
                          pathway = 'none',
                          gmt_file = 'none',
                          filter = F,
+                         gsvaPar = list(maxDiff = TRUE, kcdf = 'Gaussian', minSize = 5, maxSize = 150),
                          normalize = 'sctransform',
                          n_cores = 3,
                          rand_seed = 123){
@@ -73,6 +73,7 @@ calculate_PAS = function(counts,
                         gSets_path,
                         tools = tool,
                         filter = filter,
+                        gsvaPar = gsvaPar,
                         normalize = normalize,
                         n_cores = n_cores,
                         rand_seed = rand_seed
@@ -106,9 +107,10 @@ cal_all_tools = function(counts,
                          #cells_label,
                          tools = c('AUCell','pagoda2',
                                    'fscLVM','Vision',
-                                   'ROMA','GSVA','ssGSEA',
+                                   'ROMA', 'GSVA','ssGSEA',
                                    'plage','zscore'),
                          filter = F,
+                         gsvaPar = gsvaPar,
                          normalize = c('log','CLR','RC','scran','sctransform','none'),
                          n_cores = 3,
                          rand_seed = 123){
@@ -185,7 +187,7 @@ cal_all_tools = function(counts,
     }else if(normalize == 'sctransform'){
 
       expr_ob = Seurat::CreateSeuratObject(counts=counts[,])
-      expr_ob = Seurat::SCTransform(expr_ob,verbose=FALSE)
+      expr_ob = Seurat::SCTransform(expr_ob, verbose=FALSE)
       counts = as.matrix(expr_ob@assays$SCT@data)
       rm(expr_ob)
       cat("scTransform nomalization success\n")
@@ -254,7 +256,8 @@ cal_all_tools = function(counts,
                                    n_cores),   #-0.07, 0.4
                    GSVA = cal_gsva(counts[,],
                                    gSets,
-                                   n_cores), #-0.98,0.94
+                                   gsvaPar,
+                                   n_cores), #-0.98,0.94                
                    ssGSEA = cal_ssgsea(counts[,],
                                        gSets,
                                        n_cores),#-0.5,0.5
@@ -294,8 +297,9 @@ prepare_vis = function(pas_score,
   n_pcs = min(n_pcs,nrow(pas_score)-1)
 
   sc = Seurat::CreateSeuratObject(pas_score)
+  sc[['RNA']]$data <- sc[['RNA']]$counts
   sc = Seurat::ScaleData(sc)
-  sc = Seurat::FindVariableFeatures(sc,selection.method = getVarib(sc),verbose=F)
+  sc = Seurat::FindVariableFeatures(sc, selection.method = getVarib(sc),verbose=F)
   sc = Seurat::RunPCA(sc,verbose=F,npcs = n_pcs)
   sc = Seurat::RunUMAP(sc,dims = 1:n_pcs, n.components = 2,
                        verbose = F)
