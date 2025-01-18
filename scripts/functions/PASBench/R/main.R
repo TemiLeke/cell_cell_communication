@@ -37,6 +37,7 @@ calculate_PAS = function(counts,
                          gmt_file = 'none',
                          filter = F,
                          gsvaPar = list(maxDiff = TRUE, kcdf = 'Gaussian', minSize = 5, maxSize = 150),
+                         AUCellpar = list(normAUC=TRUE),
                          normalize = 'sctransform',
                          n_cores = 3,
                          rand_seed = 123){
@@ -74,6 +75,7 @@ calculate_PAS = function(counts,
                         tools = tool,
                         filter = filter,
                         gsvaPar = gsvaPar,
+                        AUCellpar = AUCellpar, 
                         normalize = normalize,
                         n_cores = n_cores,
                         rand_seed = rand_seed
@@ -111,6 +113,7 @@ cal_all_tools = function(counts,
                                    'plage','zscore'),
                          filter = F,
                          gsvaPar = gsvaPar,
+                         AUCellpar = AUCellpar, 
                          normalize = c('log','CLR','RC','scran','sctransform','none'),
                          n_cores = 3,
                          rand_seed = 123){
@@ -241,6 +244,7 @@ cal_all_tools = function(counts,
     score = switch(tool,
                    AUCell = cal_AUCell(counts[,],
                                        gSets,
+                                       AUCellpar,
                                        n_cores),  #0,0.8
                    pagoda2 = cal_pagoda2(counts[,],
                                          gSets,
@@ -287,7 +291,7 @@ cal_all_tools = function(counts,
 #'
 #'
 #' @export
-prepare_vis = function(pas_score,
+prepare_vis_archived = function(pas_score,
                        n_pcs = 10,
                        resolution = 0.5){
   if(is.character(pas_score) == 'character'){
@@ -310,7 +314,44 @@ prepare_vis = function(pas_score,
 }
 
 
-
+#' Preparation of visualization object from matrix or Seurat object
+#' 
+#' @param pas_object A matrix of PAS scores or a pre-existing Seurat object
+#' @param n_pcs Number of principal components to compute (default: 10)
+#' @param resolution Resolution parameter for clustering (default: 0.5)
+#' @return A Seurat object with computed dimensionality reduction and clustering
+#' @export
+prepare_vis = function(pas_object, n_pcs = 10, resolution = 0.5) {
+    # Input validation
+    if (is.character(pas_object)) {
+        stop("'pas_object' is a character, cannot process character data")
+    }
+    
+    if (inherits(pas_object, "Seurat")) {
+        sc <- pas_object
+        # DefaultAssay(sc) <- "RNA"
+    } else {
+        sc <- Seurat::CreateSeuratObject(pas_object)
+        sc[['RNA']]$data <- sc[['RNA']]$counts
+    }
+    
+    perplexity <- min(floor((ncol(sc) - 1) / 3), 30)
+    n_pcs <- min(n_pcs, nrow(sc) - 1)
+    
+    sc <- Seurat::ScaleData(sc)
+    sc <- Seurat::FindVariableFeatures(sc, 
+                                      selection.method = getVarib(sc),
+                                      verbose = FALSE)
+  
+    sc <- Seurat::RunPCA(sc, verbose = FALSE, npcs = n_pcs)
+    sc <- Seurat::RunUMAP(sc, dims = 1:n_pcs, n.components = 2, verbose = FALSE)
+    sc <- Seurat::RunTSNE(sc, dims = 1:n_pcs, perplexity = perplexity, 
+                         verbose = FALSE)
+    sc <- Seurat::FindNeighbors(sc, dims = 1:n_pcs)
+    sc <- Seurat::FindClusters(sc, resolution = resolution)
+    
+    return(sc)
+}
 
 #' visualization of PAS
 #'

@@ -133,6 +133,7 @@ cal_fscLVM = function(counts,
 
 cal_AUCell = function(counts,
                       gSets,
+                      AUCellpar,
                       n_cores
                       # number of cores used for parallel
                       ){
@@ -154,7 +155,7 @@ cal_AUCell = function(counts,
 
     sc_AUC = AUCell::AUCell_calcAUC(gSets,
                                     ac_rankings,
-                                    normAUC=T,
+                                    normAUC=normAUC,
                                     # Wether to normalize the maximum possible AUC to 1
                                     aucMaxRank=ceiling(0.05 * nrow(ac_rankings)),
                                     # the number of genes (maximum ranking) that is used to computation
@@ -355,7 +356,7 @@ cal_gsva = function(counts,
   ## matrix could be integer or numeric
 
   tryCatch({
-
+    library(parallel)
     params = c(list(exprData = counts, geneSets=gSets), gsvaPar)
     gsvaPar <- do.call(gsvaParam, params) 
 

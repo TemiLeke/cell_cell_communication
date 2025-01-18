@@ -38,6 +38,29 @@ library(qs)
 library(ensembldb)
 library(EnsDb.Hsapiens.v86)
 
+
+clean_strings <- function(covariates, separator = "_", preserve_case = FALSE) {
+  clean_string <- function(text) {
+    # Replace special chars and spaces with separator
+    cleaned <- gsub("[^[:alnum:][:space:]]", separator, text)
+    cleaned <- gsub("\\s+", separator, cleaned)
+    cleaned <- gsub(paste0(separator, "+"), separator, cleaned)
+    
+    # Remove leading/trailing separators
+    cleaned <- trimws(cleaned, whitespace = separator)
+    
+    if (!preserve_case) {
+      cleaned <- tolower(cleaned)
+    }
+    return(cleaned)
+  }
+  
+  if (length(covariates) == 1 && is.character(covariates)) {
+    return(clean_string(covariates))
+  }
+  return(sapply(covariates, clean_string))
+}
+
 #Accessory functions
 .extra_sconline.scatterPlot_summary2d=function(object,reductionCols,n=300){
   
@@ -10054,17 +10077,19 @@ varSizes <- function(){
   if(is.null(cols_to_sum)&sum(colnames(colData(inputData)) %in% cols_to_sum)==0){
     res_pd=as.data.frame(colData(inputData))
     res_pd=res_pd[!duplicated(res_pd[,colName]),]
-    row.names(res_pd)=res_pd[,colName]
-    res_pd=res_pd[match(colnames(agg_mat),row.names(res_pd)),]
-    
+    rownames(res_pd)=res_pd[,colName]
+    rownames(res_pd) <- gsub("[-/\\,;\\ ]", ".", rownames(res_pd))
+    res_pd=res_pd[match(colnames(agg_mat), rownames(res_pd)),]
+
   } else {
     if(length(setdiff(cols_to_sum,colnames(colData(inputData))))>0){
       warning("some of provided cols_to_sum cols were not identified in the dataset")
     }
     res_pd=as.data.frame(colData(inputData)[,!colnames(colData(inputData)) %in% cols_to_sum])
     res_pd=res_pd[!duplicated(res_pd[,colName]),]
-    row.names(res_pd)=res_pd[,colName]
-    res_pd=res_pd[match(colnames(agg_mat),row.names(res_pd)),]
+    rownames(res_pd)=res_pd[,colName]
+    rownames(res_pd) <- gsub("[-/\\,;\\ ]", ".", rownames(res_pd))
+    res_pd=res_pd[match(colnames(agg_mat),rownames(res_pd)),]
     
     sums_res=design_mat %*% as.matrix(as.data.frame(colData(inputData)[,cols_to_sum]))
     if(any(row.names(sums_res)!=row.names(res_pd),na.rm = F)){
@@ -10073,8 +10098,10 @@ varSizes <- function(){
     res_pd=cbind(res_pd,sums_res)
   }
   
-  
-  res=SingleCellExperiment(assays = list(counts = agg_mat),colData = res_pd,rowData=as.data.frame(rowData(inputData)))
+  res=SingleCellExperiment(assays = list(counts = agg_mat), 
+                            colData = res_pd,
+                            rowData=as.data.frame(rowData(inputData)))
+
   
   res$QC_Gene_total_count=apply(counts(res),2,sum)
   res$QC_Gene_unique_count=apply(counts(res),2,function(x) sum(x>0))
@@ -10936,7 +10963,6 @@ varSizes <- function(){
     pd$cluster_anno_res=paste0("C",as.character(prop_m_hardCluster$i))
   }
   
-
   if(is.null(inputExpData)){
     if(!file.exists(.myFilePathMakerFn("exp_merged",argList=argList,expData=T,qsFormat=T))){
       stop("Expression data is missing!")
@@ -10949,7 +10975,7 @@ varSizes <- function(){
     stop("Unrecognized inputExpression data!")
   }
 
-
+  
   inputExpData=inputExpData[,colnames(inputExpData) %in% row.names(pd)]
   if(ncol(inputExpData)==0){
     stop("Expression data doesn't match with the phenoData!")
@@ -10982,6 +11008,7 @@ varSizes <- function(){
   if(is.null(pseudocell.size)){
     #inputData=inputExpData;colName="lib_anno";mode="sum";cols_to_sum=cols_to_sum
     sl_data=.extra_sconline.PseudobulkFn(inputData=inputExpData,colName="lib_anno",mode="sum",min_size_limit=min_size_limit,cols_to_sum=cols_to_sum,ncores=ncores)
+  
   } else {
     inputExpList=.mySplitObject_v2(inputExpData,colName="lib_anno",min_dataset_size=min_size_limit,ncores=ncores)
     #inputExpList2=.mySplitObject_v2(inputExpData,colName="library_anno2",min_dataset_size=min_size_limit,ncores=ncores)

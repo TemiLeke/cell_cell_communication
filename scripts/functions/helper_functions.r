@@ -14,6 +14,34 @@ filter_lowly_exp_pathways = function(expressed, all_paths, pathway_gene_threshol
 }
 
 ##############################################################################################################################
+filter_genesets <- function(expressed, all_paths, pathway_gene_threshold = 0.33, min_genes = 5, max_genes = inf) {
+  # filter by absolute gene count thresholds
+  gene_count_filter <- sapply(seq_along(all_paths), function(x) {
+    path_length <- length(all_paths[[x]])
+    path_length >= min_genes && path_length <= max_genes
+  })
+  
+  size_filtered_paths <- all_paths[gene_count_filter]
+  
+  # calculate percentage of pathway genes that are expressed
+  index <- sapply(seq_along(size_filtered_paths), function(x) {
+    (sum(size_filtered_paths[[x]] %in% expressed) / length(size_filtered_paths[[x]])) > pathway_gene_threshold
+  })
+  
+  # flter pathways meeting threshold
+  filtered_paths <- size_filtered_paths[index]
+  
+  # get intersections and remove duplicates
+  x <- lapply(seq_along(filtered_paths), function(y) {
+    intersect(expressed, filtered_paths[[y]])
+  })
+  names(x) <- names(filtered_paths)
+  x <- x[!duplicated(x)]
+  
+  return(x)
+}
+
+##############################################################################################################################
 read.geneset = function(path_to_gset){
     invisible(capture.output({
         bp = GSA.read.gmt(path_to_gset)
@@ -291,116 +319,132 @@ fit.gsva = function(mod1, i, gsva.per.celltype, coef, contrasts, meta, random_ef
 
 
 ####################################################################################################################
-# Define function to get linear model fits for each gene set
-get_fits_cps = function(gsva_out, meta, covariates, random_effect){
+#' Fit Linear Models for Pathway Activity Scores
+#' 
+#' @description
+#' Analyzes pathway activity scores across cell types using linear modeling, with 
+#' optional contrast analysis between early and late stages.
+#'
+#' @param pa_scores Dataframe containing pathway activity scores
+#' @param meta Dataframe with sample metadata
+#' @param covariates Vector of covariate names to include in model
+#' @param random_effect Name of random effect variable (or 'None')
+#' @param cell_type Current cell type being analyzed
+#' @param use_contrasts Boolean indicating whether to perform contrast analysis
+#'
+#' @return List of linear model fits and results for the cell type
+get_fits_cps = function(pa_scores, meta, covariates, random_effect, cell_type, use_contrasts=FALSE) {
 
+    i = cell_type
+    predict = meta
 
-    # Function to get linear model fits for each gene set
-
-    # Parameters:
-    
-    # gsva_out: A list of gene set variation analysis (GSVA) scores for each gene set
-    # meta: A data frame containing metadata for the samples corresponding to the gene set scores
-    # covariates: A string specifying the covariates to include in the linear model
-
-    # Returns:
-    # A list of linear model fits for each gene set
-
-    # Usage:
-    # fits <- get_fits(gsva_out, meta, covariates)
-
-    fits = list()
-
-    for(i in names(gsva_out)){
-
-        # Get metadata for the samples corresponding to the gene set scores
-        predict = meta[[i]]
-
-        # Define the formula based on the selected covariates
-        formula="~ 0"
-        for(icov in covariates){
-            #icov <- gsub(" ", ".", icov)
-            if(length(unique(predict[, icov]))>1){
-                if(class(predict[, icov]) == class(factor)){
-                    predict[, icov] = as.character(predict[, icov])
-                }
-                formula = paste0(formula, " + ", icov)
-            } else {
-                warning(paste0("Excluding ", icov," covariate as it has only one level!"))
+    # Build formula dynamically from covariates
+    formula = "~ "
+    for(icov in covariates) {
+        # Skip covariates with only one level
+        if(length(unique(predict[, icov])) > 1) {
+            if(is.factor(class(predict[, icov]))) {
+                predict[, icov] = as.character(predict[, icov])
             }
+            formula = paste0(formula, " + ", icov)
+        } else {
+            warning(paste0("Excluding ", icov," covariate as it has only one level!"))
         }
+    }
 
-        if (!grepl("CPS", formula)){
-            warning(paste0("Skipping fit for ", i, " as it it only has one level of CPS"))
-            next
-        }else{
-            # Generate the design matrix based on the formula and data
-            mod <- model.matrix(as.formula(formula), data = predict)
 
-            contrasts <- makeContrasts(CPSlate - CPSearly, levels=colnames(mod))
-            # Fit the linear model using the gene set scores as the outcome
-            fits[[i]] = fit.gsva.cps(mod, i, gsva_out, meta, contrasts, random_effect)
-        }
+    # Create design matrix and fit model
+    mod <- model.matrix(as.formula(formula), data = predict)
+
+    if (use_contrasts) {
+        contrasts <- makeContrasts(CPSlate - CPSearly, levels=colnames(mod))
+        fits = fit.cps(mod, i, pa_scores, meta, contrasts, random_effect)
+    } else {
+        fits = fit.cps(mod, i, pa_scores, meta, contrasts=NULL, random_effect)
     }
     return(fits)
 }
-   
+
 ####################################################################################################################
-# Define function to fit linear models and get gene set scores for a single gene set
+#' Fit Linear Model for Single Cell Type
+#' 
+#' @description
+#' Performs detailed linear modeling for a single cell type, including empirical
+#' Bayes moderation and optional random effects/contrasts analysis.
+#'
+#' @param mod1 Design matrix for linear model
+#' @param i Current cell type name
+#' @param pa_scores Matrix of pathway activity scores
+#' @param meta Sample metadata
+#' @param contrasts Contrast matrix for differential analysis
+#' @param random_effect Random effect variable name
+#'
+#' @return List containing:
+#'   - CPS: Main analysis results
+#'   - late_vs_early: Contrast analysis (if requested)
+fit.cps = function(mod1, i, pa_scores, meta, contrasts, random_effect) {
+    expression <- pa_scores
 
-fit.gsva.cps = function(mod1, i, gsva.per.celltype, meta, contrasts, random_effect) {
-    # This function fits linear models and obtains gene set scores for a single gene set.
-
-    # Args:
-    # mod1: A model matrix specifying the linear model design, created using the metadata for the samples corresponding to the gene set scores.
-
-    # i: A character string indicating the name of the gene set being analyzed.
-    # gsva.per.celltype: A list containing gene set scores for all cell types.
-
-    # Returns:
-    # A list containing a table of gene set results for each contrast and each cell type.
-
-    # Fit the linear model with the gene set scores as the outcome
-    expression <- gsva.per.celltype[[i]]
-    meta <- meta[[i]]
-    
-    if (random_effect != 'None') {
-      cor <- duplicateCorrelation(expression, mod1, block = as.character(meta[, random_effect]))
-      # print(cor)
-      fit <- if (!is.nan(cor$consensus.correlation) && abs(cor$consensus.correlation) > 0.01) 
-                  lmFit(expression, design = mod1, block = as.character(meta[, random_effect]), correlation = cor$consensus.correlation)
-              else
-                  lmFit(expression, design = mod1)
+    # handle random effects if specified
+    if (!is.null(random_effect)) {
+        # calculate correlation for repeated measurements
+        cat("       Fetching duplicate correlation\n")
+        cor <- duplicateCorrelation(expression, mod1, 
+                                  block = as.character(meta[, random_effect]))
+        
+        # Only use correlation if significant
+        fit <- if (!is.nan(cor$consensus.correlation) && 
+                abs(cor$consensus.correlation) > 0.01) {
+            cat("       Fitting model with random effect correction with correlation:", round(cor$consensus.correlation, 3), "\n")
+            lmFit(expression, design = mod1, 
+                block = as.character(meta[, random_effect]), 
+                correlation = cor$consensus.correlation)
+        } else {
+            cat("       Correlation not significant, using standard fit\n")
+            lmFit(expression, design = mod1)
+        }
     } else {
+        cat("       Running Standard fit\n")
         fit <- lmFit(expression, design = mod1)
     }
 
+    # standard errors
     coef_summary <- data.frame(StdErr = sqrt(fit$stdev.unscaled))
 
+    # empirical Bayes moderation
     fit_ebayes <- eBayes(fit)
 
-    allgenesets <- list()
-    allgenesets[['CPS']] <- topTable(fit_ebayes, adjust.method = "BH", number = Inf, confint = TRUE) %>% arrange(P.Value)
+    # get results
+    results <- list()
+    results[['CPS']] <- topTable(fit_ebayes, adjust.method = "BH", 
+                                number = Inf, confint = TRUE) %>% 
+                        arrange(P.Value)
 
-    # Add the celltype and gene set names to the output table
-    for (j in names(allgenesets)) {
+    # add metadata
+    results[['CPS']]$celltype = i
+    results[['CPS']]$names = rownames(results[['CPS']])
+    results[['CPS']] <- merge(results[['CPS']], 
+                             coef_summary,
+                             by = "row.names", 
+                             all = FALSE,
+                             all.x = TRUE) %>% 
+                        arrange(P.Value)
 
-        allgenesets[[j]]$celltype = i
-        allgenesets[[j]]$names = rownames(allgenesets[[j]])
-        allgenesets[[j]] <- merge(allgenesets[[j]], 
-                                  coef_summary,
-                                  by = "row.names", 
-                                  all = FALSE,
-                                  all.x = TRUE) %>% arrange(P.Value)
+    # contrast analysis if requested
+    if (!is.null(contrasts)) {
+        fit_contrasts <- contrasts.fit(fit, contrasts)
+        fit_contrasts <- eBayes(fit_contrasts)
+        results[['late_vs_early']] <- topTable(fit_contrasts, 
+                                             adjust.method = "BH", 
+                                             coef = "CPSlate - CPSearly",  
+                                             number = Inf, 
+                                             confint = TRUE) %>% 
+                                    arrange(P.Value)
+        results[['late_vs_early']]$celltype = i
+        results[['late_vs_early']]$names = rownames(results[['late_vs_early']])
     }
 
-    fit_contrasts <- contrasts.fit(fit, contrasts)
-    fit_contrasts <- eBayes(fit_contrasts)
-    allgenesets[['late_vs_early']] <- topTable(fit_contrasts, adjust.method = "BH", coef = "CPSlate - CPSearly",  number = Inf, confint = TRUE) %>% arrange(P.Value)
-    allgenesets[['late_vs_early']]$celltype = i
-    allgenesets[['late_vs_early']]$names = rownames(allgenesets[['late_vs_early']])
-
-    return(allgenesets)
+    return(results)
 }
 
 
@@ -617,3 +661,229 @@ find_parent_key <- function(cell_type, subclass) {
   }
   return(NA)  # Return NA if no match found
 }
+
+clean_strings <- function(covariates, separator = "_", preserve_case = FALSE, replace_hyphen = TRUE) {
+  clean_string <- function(text) {
+    # Choose pattern based on replace_hyphen flag
+    pattern <- if(replace_hyphen) {
+      "[^[:alnum:][:space:]]"  # Replace all special chars including hyphens
+    } else {
+      "[^[:alnum:][:space:]-]"  # Replace all special chars except hyphens
+    }
+    
+    # Replace special chars and spaces with separator
+    cleaned <- gsub(pattern, separator, text)
+    cleaned <- gsub("\\s+", separator, cleaned)
+    cleaned <- gsub(paste0(separator, "+"), separator, cleaned)
+    
+    # Remove leading/trailing separators
+    cleaned <- trimws(cleaned, whitespace = separator)
+    
+    if (!preserve_case) {
+      cleaned <- tolower(cleaned)
+    }
+    return(cleaned)
+  }
+  
+  if (length(covariates) == 1 && is.character(covariates)) {
+    return(clean_string(covariates))
+  }
+  return(sapply(covariates, clean_string))
+}
+
+
+#' Run differential analysis for a single gene set, method and cell type combination
+#' @description Performs differential analysis using pathway activity scores, accounting for random effects
+#' and covariates while handling potential errors gracefully.
+#'
+#' @param pas_object SingleCellExperiment object containing pathway activity scores
+#' @param gene_set_db Named list of gene set collections (e.g., 'gabitto', KEGG)
+#' @param gene_set String indicating which gene set to analyze (e.g., "gabitto")
+#' @param method String specifying the pathway activity scoring method used (e.g 'AUCell')
+#' @param cell_type String specifying the cell type to analyze
+#' @param test_categories Named list of test category filters
+#' @param test_cat String indicating which test category filter to apply
+#' @param cell_type_column String specifying the column name containing cell type information
+#' @param random_effect String specifying the column name for random effect (e.g., "subject_id")
+#' @param factor String specifying the column name for the continuous factor of interest
+#' @param covariates Character vector of column names to include as covariates
+#' @param numeric_covariates Character vector of covariates that should be treated as numeric
+#' @param data_dir String specifying path to data directory containing expressed genes
+#' @param pathway_gene_threshold Numeric threshold for filtering pathways (default: 0.33)
+#'
+#' @return List containing fitted model results for each pathway
+#' @export
+
+
+run_differential_analysis <- function(
+    pas_object,
+    gene_set_db,
+    gene_set,
+    method,
+    cell_type,
+    test_categories,
+    test_cat,
+    cell_type_column,
+    random_effect,
+    factor = "continuous_pseudoprogression_score",
+    covariates,
+    numeric_covariates,
+    data_dir,
+    pathway_gene_threshold = 0.33
+) {
+    # Input validation
+    if (!is.character(gene_set) || length(gene_set) != 1) {
+        stop("gene_set must be a single character string")
+    }
+    if (!gene_set %in% names(gene_set_db)) {
+        stop("gene_set not found in gene_set_db")
+    }
+    
+    # tryCatch({
+        # Read gene set terms
+        pw_terms <- read.geneset(gene_set_db[[gene_set]])
+        
+        # Extract summary data
+        col_data <- colData(pas_object[[gene_set]][[method]])
+        pa_scores <- as.data.frame(Matrix::as.matrix(assay(pas_object[[gene_set]][[method]], 'X')))
+        
+        # Get expressed genes
+        expressed_genes_path <- file.path(
+            data_dir,
+            "anndata",
+            find_parent_key(cell_type, subclass),
+            clean_strings(cell_type, preserve_case=TRUE),
+            paste0(clean_strings(cell_type, preserve_case=TRUE), "_pseudobulked_expressed_genes.rds")
+        )
+        
+        if (!file.exists(expressed_genes_path)) {
+            stop(paste("Expressed genes file not found:", expressed_genes_path))
+        }
+        
+        expressed_genes <- readRDS(expressed_genes_path)
+        
+        # Filter data based on test category
+        if (!test_cat %in% names(test_categories)) {
+            stop(paste("Test category", test_cat, "not found in test_categories"))
+        }
+        
+        full_expression <- paste0("col_data$", test_categories[[test_cat]])
+        summary <- col_data[
+            col_data[[cell_type_column]] == cell_type &
+            eval(parse(text = full_expression)),
+        ]
+        
+        if (nrow(summary) == 0) {
+            stop("No samples remain after filtering")
+        }
+        
+        # Process random effects and factors
+        if(!is.null(random_effect)){
+            summary[[random_effect]] <- as.factor(summary[[random_effect]])
+        }
+        summary[['CPS']] <- summary[[factor]]
+        
+        # Convert numeric covariates
+        if (!identical(numeric_covariates, "None")) {
+            for (cov in numeric_covariates) {
+                if (!cov %in% colnames(summary)) {
+                    stop(paste("Covariate not found in data:", cov))
+                }
+                summary[[cov]] <- as.numeric(summary[[cov]])
+            }
+        }
+        
+        # Filter pathways and get scores
+        filtered_pathways <- names(filter_genesets(expressed_genes, pw_terms, pathway_gene_threshold))
+        
+        if (length(filtered_pathways) == 0) {
+            stop("No pathways remain after filtering")
+        }
+        
+        scores <- pa_scores[filtered_pathways, rownames(summary)]
+        
+        # Fit models
+        fits <- get_fits_cps(scores, summary, covariates, random_effect, cell_type, use_contrasts=FALSE)
+
+        return(fits)
+        
+    # }, error = function(e) {
+    #     if (grepl("       F-statistics not found in fit", e$message)) {
+    #         stop(paste("       F-statistics error for", cell_type, ":", e$message))
+    #     } else if (grepl("       undefined columns selected", e$message)) {
+    #         stop(paste("       Column matching error for", cell_type, ":", e$message))
+    #     } else {
+    #         stop(paste("       Error in analysis for", cell_type, ":", e$message))
+    #     }
+    # })
+}
+
+
+get.fits <- function(pas_object, curated_gene_set_db, pas_methods, cell_types, 
+                    test_categories, cell_type_column, factor, covariates, 
+                    numeric_covariates, data_dir, pathway_gene_threshold = 0.33) {
+  fit_result <- list()
+  
+  safe_run_differential <- purrr::safely(run_differential_analysis)
+  
+  for (gs in names(curated_gene_set_db)) {
+    fit_result[[gs]] <- purrr::map(pas_methods, function(method) {
+      cat(sprintf("\nProcessing %s with method %s\n", gs, method))
+      
+      purrr::map(cell_types, function(cell_type) {
+        cat(sprintf("  Cell type: %s\n", cell_type))
+        
+        purrr::map(names(test_categories), function(test_cat) {
+          cat(sprintf("    Category: %s\n", test_cat))
+          
+          result <- safe_run_differential(
+            pas_object = pas_object,
+            gene_set_db = curated_gene_set_db,
+            gene_set = gs,
+            method = method,
+            cell_type = cell_type,
+            test_categories = test_categories,
+            test_cat = test_cat,
+            cell_type_column = cell_type_column,
+            random_effect = NULL,
+            factor = factor,
+            covariates = covariates,
+            numeric_covariates = numeric_covariates,
+            data_dir = data_dir,
+            pathway_gene_threshold = pathway_gene_threshold
+          )
+          
+          if (!is.null(result$error)) {
+            cat(sprintf("    Error in %s-%s-%s: %s\n", 
+                       method, cell_type, test_cat, result$error))
+            return(NULL)
+          }
+          
+          result$result
+        }) %>% setNames(names(test_categories))
+      }) %>% setNames(cell_types)
+    }) %>% setNames(pas_methods)
+  }
+  
+  fit_result
+}
+
+
+convert_pathway_list_to_df <- function(pathway_list) {
+  all_genes <- vector()
+  all_modules <- vector()
+  
+  for(module_name in names(pathway_list)) {
+    genes <- pathway_list[[module_name]]
+    # sdd each gene-pathway pair
+    all_genes <- c(all_genes, genes)
+    all_modules <- c(all_modules, rep(module_name, length(genes)))
+  }
+  
+  result_df <- data.frame(
+    gene_name = all_genes,
+    module = factor(all_modules),
+    stringsAsFactors = FALSE
+  )
+}
+# 

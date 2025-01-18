@@ -21,10 +21,10 @@ from rpy2.robjects.conversion import localconverter
 import re
 from typing import List, Union
 
-
 def clean_strings(covariates: Union[List[str], str],
-                          separator: str = "_",
-                          preserve_case: bool = False) -> Union[List[str], str]:
+                separator: str = "_",
+                preserve_case: bool = False,
+                replace_hyphen: bool = False) -> Union[List[str], str]:
     """
     Clean covariate names by replacing special characters (including hyphens) and spaces with a separator.
     
@@ -37,28 +37,28 @@ def clean_strings(covariates: Union[List[str], str],
         Cleaned string or list of cleaned strings
         
     Examples:
-        >>> clean_covariate_names("Age at Death")
-        'age_at_death'
-        >>> clean_covariate_names(["PMI (hours)", "Race (choice=White)"])
-        ['pmi_hours', 'race_choice_white']
-        >>> clean_covariate_names("data-set-1")
-        'data_set_1'
+        >>> clean_strings("Age at Death", separator=".")
+        'age.at.death'
+        >>> clean_strings(["PMI (hours)", "Race (choice=White)"], separator=".")
+        ['pmi.hours', 'race.choice.white']
+        >>> clean_strings("data-set 1", separator=".", replace_hyphen=False)
+        'data-set.1'
     """
     def clean_string(text: str) -> str:
-        # Replace special characters (including hyphens) and multiple spaces with a single separator
-        cleaned = re.sub(r'[^\w\s]', separator, text)
-        cleaned = re.sub(r'\s+', separator, cleaned)
-        cleaned = re.sub(f'{separator}+', separator, cleaned)
+        escaped_separator = re.escape(separator)
         
-        # Remove leading/trailing separators
+        if replace_hyphen:
+            cleaned = re.sub(r'[^\w\s]', escaped_separator, text)
+        else:
+            cleaned = re.sub(r'[^\w\s-]', escaped_separator, text)
+            
+        cleaned = re.sub(r'\s+', escaped_separator, cleaned)
+        cleaned = re.sub(f'{escaped_separator}+', separator, cleaned)
         cleaned = cleaned.strip(separator)
         
         return cleaned if preserve_case else cleaned.lower()
     
-    if isinstance(covariates, str):
-        return clean_string(covariates)
-    
-    return [clean_string(cov) for cov in covariates]
+    return clean_string(covariates) if isinstance(covariates, str) else [clean_string(cov) for cov in covariates]
 
 def rescale_matrix(S, log_scale=False):
     """
@@ -1099,3 +1099,53 @@ def save_curated_as_gmt(df, name_col, member_col, tempdir):
             genes = '\t'.join(row[member_col])
             of.write(f"{name}\t{genes}\n")
     return gmt_df
+
+
+from anndata import AnnData
+from typing import Dict, List, Any, Literal
+import scanpy as sc
+import pandas as pd
+import numpy as np
+from contextlib import contextmanager
+
+@contextmanager
+def suppress_scanpy_output():
+    """Context manager to temporarily suppress scanpy output."""
+    original_verbosity = sc.settings.verbosity
+    sc.settings.verbosity = 0
+    try:
+        yield
+    finally:
+        sc.settings.verbosity = original_verbosity
+
+def update_pseudo_numeric_covariates(
+    adata: AnnData,
+    adata_annot: AnnData,
+    covariate: str,
+    agg_method: Literal['count', 'sum'] = 'count'
+) -> pd.Series:
+    """
+    Update pseudo numeric variables in PAS object using optimized operations.
+    """
+
+    clean_covariate = clean_strings(covariate)
+    adata_annot.X = adata_annot.layers['UMIs']
+
+    try:
+        # Extract 'cells_merged' column as a series
+        cells_merged = adata.obs['cells_merged'].str.split(',')
+        # Vectorized count or sum based on agg_method
+        if agg_method == 'count':
+            with suppress_scanpy_output():
+                pseudo_covariate = cells_merged.apply(lambda x: len(set(adata_annot.var_names[sc.pp.filter_genes(adata_annot[x], 
+                                                                                                                min_counts=1, 
+                                                                                                                inplace=False)[0]]))
+                                                )
+        elif agg_method == 'sum':
+            pseudo_covariate = cells_merged.apply(lambda x: adata_annot[x].X.sum().sum())
+
+    except KeyError as e:
+        raise KeyError(f"Missing required column in data: {e}")
+
+    return pseudo_covariate
+
