@@ -131,7 +131,7 @@ def run_de_tests(sub, region, target, split_key, outgroup_de, outgroup, covariat
     ro.r("library(here)")
     
     if outgroup_de:
-        if os.path.exists(os.path.join(save_dir, outgroup, "versus_all", clean_strings(outgroup, "_",  True) + "_vs_all_DE.csv")) is False:
+        if os.path.exists(os.path.join(save_dir, target, "versus_all", clean_strings(outgroup, "_",  True) + "_vs_all_DE.csv")) is False:
         
             print(str(datetime.now()) + " -- Starting " + clean_strings(outgroup, "_",  True) + " versus all", flush=True)
             sub.obs["comparison"] = "0"
@@ -165,10 +165,10 @@ def run_de_tests(sub, region, target, split_key, outgroup_de, outgroup, covariat
             ordered = ro.r("data_g")
             if (group_cell is True) and (isinstance(ordered, rpy2.rinterface_lib.sexp.NULLType) is True):
                 ro.r("re <- nebula(counts, obs$" + random_effect + ", offset=obs$" + offset_variable + ", pred=df, covariance=TRUE)")
-                ro.r("saveRDS(re, '" + os.path.join(save_dir, outgroup, "versus_all", clean_strings(outgroup, "_",  True) + "_vs_all_DE.rds") + "')")
+                ro.r("saveRDS(re, '" + os.path.join(save_dir, target, "versus_all", clean_strings(outgroup, "_",  True) + "_vs_all_DE.rds") + "')")
             else:
                 ro.r("re <- nebula(data_g$count, data_g$id, offset=data_g$offset, pred=data_g$pred, covariance=TRUE)")
-                ro.r("saveRDS(re, '" + os.path.join(save_dir, outgroup, "versus_all", clean_strings(outgroup, "_",  True) + "_vs_all_DE.rds") + "')")
+                ro.r("saveRDS(re, '" + os.path.join(save_dir, target, "versus_all", clean_strings(outgroup, "_",  True) + "_vs_all_DE.rds") + "')")
 
             with localconverter(ro.default_converter + pandas2ri.converter):
                 results = ro.r("re$summary")
@@ -180,9 +180,9 @@ def run_de_tests(sub, region, target, split_key, outgroup_de, outgroup, covariat
             results = results.loc[convergence == 1, :]
             results = results.loc[overdispersion["Subject"] < 1, :]
             gene_index = [j - 1 for j in results["gene_id"].to_list()]
-            results.index = adata.var_names[gene_index]
+            results.index = sub.var_names[gene_index]
 
-            results.to_csv(os.path.join(save_dir, outgroup, "versus_all", clean_strings(outgroup, "_",  True) + "_versus_all_DE.csv"))
+            results.to_csv(os.path.join(save_dir, target, "versus_all", clean_strings(outgroup, "_",  True) + "_versus_all_DE.csv"))
             print(str(datetime.now()) + " -- " + clean_strings(outgroup, "_",  True) + " versus all was written to disk", flush=True)
 
         else:
@@ -262,10 +262,10 @@ def run_de_tests(sub, region, target, split_key, outgroup_de, outgroup, covariat
         return
     
     for i in tests:
-        if os.path.exists(os.path.join(save_dir, outgroup, i)) == False:
-            os.makedirs(os.path.join(save_dir, outgroup, i))
+        if os.path.exists(os.path.join(save_dir, target, i)) == False:
+            os.makedirs(os.path.join(save_dir, target, i))
             
-        if os.path.exists(os.path.join(save_dir, outgroup, i, clean_strings(target, "_",  True) + "_" + clean_strings(outgroup, "_",  True) + "_across_" + i + "_DE.csv")) == False:
+        if os.path.exists(os.path.join(save_dir, target, i, clean_strings(target, "_",  True) + "_" + clean_strings(outgroup, "_",  True) + "_across_" + i + "_DE.csv")) == False:
             print(str(datetime.now()) + " -- Starting " + clean_strings(outgroup, "_",  True) + " across " + i)
             ro.r("covariates <- c('" + i + "', " + str(covariates).replace("[", "").replace("]", "") + ")")
             ro.r("df <- model.matrix(~" + covariate_formula + i + ", data=obs[,covariates])")
@@ -277,10 +277,10 @@ def run_de_tests(sub, region, target, split_key, outgroup_de, outgroup, covariat
             ordered = ro.r("data_g")
             if (group_cell is False) and (isinstance(ordered, rpy2.rinterface_lib.sexp.NULLType) is True):
                 ro.r("re <- nebula(counts, obs$" + random_effect + ", pred=df, offset=obs$" + offset_variable + ", covariance=TRUE)")
-                ro.r("saveRDS(re, '" + os.path.join(save_dir, outgroup, i, clean_strings(target, "_",  True) + "_" + clean_strings(outgroup, "_",  True) + "_across_" + i + "_DE.rds") + "')")
+                ro.r("saveRDS(re, '" + os.path.join(save_dir, target, i, clean_strings(target, "_",  True) + "_" + clean_strings(outgroup, "_",  True) + "_across_" + i + "_DE.rds") + "')")
             else:
                 ro.r("re <- nebula(data_g$count, data_g$id, pred=data_g$pred, offset=data_g$offset, covariance=TRUE)")
-                ro.r("saveRDS(re, '" + os.path.join(save_dir, outgroup, i, clean_strings(target, "_",  True) + "_" + clean_strings(outgroup, "_",  True) + "_across_" + i + "_DE.rds") + "')")
+                ro.r("saveRDS(re, '" + os.path.join(save_dir, target, i, clean_strings(target, "_",  True) + "_" + clean_strings(outgroup, "_",  True) + "_across_" + i + "_DE.rds") + "')")
 
             with localconverter(ro.default_converter + pandas2ri.converter):
                 results = ro.r("re$summary")
@@ -291,7 +291,7 @@ def run_de_tests(sub, region, target, split_key, outgroup_de, outgroup, covariat
             results = results.loc[convergence == 1, :]
             gene_index = [j - 1 for j in results["gene_id"].to_list()]
             results.index = sub.var_names[gene_index]
-            results.to_csv(os.path.join(save_dir, outgroup, i, clean_strings(target, "_",  True) + "_" + clean_strings(outgroup, "_",  True) + "_across_" + i + "_DE.csv"))
+            results.to_csv(os.path.join(save_dir, target, i, clean_strings(target, "_",  True) + "_" + clean_strings(outgroup, "_",  True) + "_across_" + i + "_DE.csv"))
             print(str(datetime.now()) + " -- " + clean_strings(outgroup, "_",  True) + " along " + i + " was written to disk", flush=True)
         
         else:
