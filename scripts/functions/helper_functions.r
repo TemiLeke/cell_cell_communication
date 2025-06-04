@@ -887,3 +887,103 @@ convert_pathway_list_to_df <- function(pathway_list) {
   )
 }
 # 
+
+compute.kld.fix <- function (coembed, genes.use, n.grids = 100, gene.set.list, gene.set.cutoff = 3, 
+                          n.times = 100) 
+{
+  coembed.scale <- scale(coembed[genes.use, ])
+  # grid.co <- compute.grid.coords(coembed = coembed, genes.use = genes.use, 
+  # n.grids = n.grids)
+  ###
+  coembed <- scale(coembed[genes.use, ])
+  # cl <- anticlust:::balanced_clustering(coembed, K = n.grids)
+  ####
+  # function (x=coembed, K = n.grids, method = "centroid", solver = NULL) 
+  # {
+  x=coembed
+  K = n.grids
+  anticlust:::input_validation_anticlustering(
+    x, K,objective="distance", method = "centroid", 
+    preclustering=TRUE, categories= NULL,repetitions= NULL)
+  # anticlust:::validate_input_optimal_anticlustering(x, K, objective = "diversity", 
+  #                                       solver=NULL)
+  #####
+  solver=NULL
+  objective = "diversity"
+  anticlust:::validate_data_matrix(x)
+  anticlust:::validate_input(K, "K", objmode = "numeric", must_be_integer = TRUE, 
+                             not_na = TRUE, not_function = TRUE)
+  N <- nrow(as.matrix(x))
+  if (!(length(K) == 1 || sum(K) == N)) {
+    stop("Argument `K` is misspecified.")
+  }
+  # if (objective != "dispersion") {
+  #   if (!all(K == K[1]) || length(K) == 1 && N%%K != 0) {
+  #     stop("The selected method can only be used for equal-sized groups")
+  #   }
+  # }
+  anticlust:::validate_input(objective, "objective", objmode = "character", 
+                             len = 1, input_set = c("variance", "diversity", "kplus", 
+                                                    "dispersion"), not_na = TRUE, not_function = TRUE)
+  if (anticlust:::argument_exists(solver)) {
+    validate_input(solver, "solver", objmode = "character", 
+                   len = 1, input_set = c("glpk", "symphony"), not_na = TRUE, 
+                   not_function = TRUE)
+  }
+  is_distance_matrix <- function(m) {
+    m <- as.matrix(m)
+    if (nrow(m) != ncol(m)) {
+      return(FALSE)
+    }}
+  if (!is_distance_matrix(x)) {
+    data <- as.matrix(x)}
+  else{data <- x}
+  cl <- anticlust:::nn_centroid_clustering(data, NROW(data)/K)
+  # }
+  ####
+  grid.co <- aggregate(coembed, list(cl), mean)[, -1]
+  # return(centroid.coords)
+  ###
+  dist.to.grid <- gsdensity:::vectorized_pdist(A = as.matrix(coembed.scale), 
+                                               B = as.matrix(grid.co))
+  bandwidth <- median(apply(dist.to.grid, 1, min))
+  dist.to.grid.norm <- dist.to.grid/bandwidth
+  density.contributions <- exp(-dist.to.grid.norm * dist.to.grid.norm/2)
+  Q <- gsdensity:::compute.db(density.df = density.contributions)
+  gene.set.names <- rep(NA, length(gene.set.list))
+  klds <- rep(0, length(gene.set.list))
+  len.gl <- rep(0, length(gene.set.list))
+  rklds.avg <- rep(0, length(gene.set.list))
+  rklds.sd <- rep(0, length(gene.set.list))
+  pvalues <- rep(0, length(gene.set.list))
+  for (i in 1:length(gene.set.list)) {
+    gene.set.name <- names(gene.set.list)[i]
+    gene.set <- intersect(genes.use, gene.set.list[[i]])
+    len.gene.set <- length(gene.set)
+    if (len.gene.set < gene.set.cutoff) {
+      next
+    }
+    gene.set.names[i] <- gene.set.name
+    len.gl[i] <- len.gene.set
+    P <- gsdensity:::compute.db(density.df = density.contributions[gene.set, 
+    ])
+    kld <- sum(P * log(P/Q))
+    klds[i] <- log(kld)
+    rkld <- sapply(1:n.times, function(x) gsdensity:::sample.kld(
+      density.df = density.contributions, 
+      ref = Q, len.gene.set = len.gene.set))
+    rkld.avg <- mean(log(rkld))
+    rkld.sd <- sd(log(rkld))
+    rklds.avg[i] <- rkld.avg
+    rklds.sd[i] <- rkld.sd
+    pvalue <- pnorm(log(kld), rkld.avg, rkld.sd, lower.tail = FALSE)
+    pvalues[i] <- pvalue
+  }
+  out <- as.data.frame(cbind(gene.set.names, klds, len.gl, 
+                             rklds.avg, rklds.sd, pvalues))
+  out <- out[complete.cases(out), ]
+  colnames(out) <- c("gene.set", "kld", "gene.set.length", 
+                     "rkld.mean", "rkld.sd", "p.value")
+  out$p.adj <- p.adjust(p = out$p.value, method = "fdr")
+  return(out)
+}
